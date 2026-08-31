@@ -1,0 +1,306 @@
+<title>Felt Advisor</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+  :root{
+    --ground:#0f1512;
+    --surface:#182019;
+    --surface2:#1f2a21;
+    --line:#2b382e;
+    --felt:#2e7d5b;
+    --gold:#d9a441;
+    --red:#e4574f;
+    --text:#ede9dc;
+    --muted:#8fa096;
+    --good:#5fbf8a;
+    --warn:#d9a441;
+    --bad:#e4574f;
+    --disp:"Bricolage Grotesque",system-ui,sans-serif;
+    --body:"Instrument Sans",system-ui,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--ground);color:var(--text);font-family:var(--body);
+    margin:0;padding:0 0 96px;font-size:15px;line-height:1.55}
+  .wrap{max-width:480px;margin:0 auto;padding:20px 16px}
+  header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px}
+  h1{font-family:var(--disp);font-weight:700;font-size:22px;margin:0;letter-spacing:.01em}
+  h1 .suit{color:var(--red)}
+  .tag{font-family:var(--mono);font-size:10.5px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+  .notice{font-size:12px;color:var(--muted);border-left:2px solid var(--gold);padding:2px 0 2px 10px;margin:10px 0 18px}
+
+  section{margin-bottom:18px}
+  .label{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+
+  .slots{display:flex;gap:8px;flex-wrap:wrap}
+  .slot-group{display:flex;gap:6px;align-items:center}
+  .slot{width:44px;height:62px;border-radius:7px;border:1.5px dashed var(--line);
+    background:var(--surface);display:flex;flex-direction:column;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:17px;font-weight:600;cursor:pointer;color:var(--text);
+    transition:border-color .15s, box-shadow .15s}
+  .slot .s{font-size:14px;line-height:1}
+  .slot.filled{border-style:solid;border-color:var(--line);background:#f4efe2;color:#1a1a1a}
+  .slot.filled.red{color:#c8352d}
+  .slot.active{border-color:var(--gold);box-shadow:0 0 0 2px rgba(217,164,65,.25)}
+  .slot-sep{width:1px;height:44px;background:var(--line);margin:0 4px}
+
+  .grid{display:grid;grid-template-columns:repeat(13,1fr);gap:4px;margin-top:10px}
+  .cardbtn{aspect-ratio:1/1.15;border:1px solid var(--line);border-radius:5px;background:var(--surface);
+    color:var(--text);font-family:var(--mono);font-size:12px;font-weight:600;cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0}
+  .cardbtn .s{font-size:10px;line-height:1.1}
+  .cardbtn.red{color:var(--red)}
+  .cardbtn.red .s{color:var(--red)}
+  .cardbtn:disabled{opacity:.22;cursor:default}
+  .cardbtn:active:not(:disabled){background:var(--surface2)}
+
+  .nums{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+  .field label{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+  .field input{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:7px;
+    color:var(--text);font-family:var(--mono);font-size:16px;font-weight:600;padding:9px 10px;
+    font-variant-numeric:tabular-nums}
+  .field input:focus{outline:none;border-color:var(--felt)}
+
+  .actions{display:flex;gap:10px;margin-top:4px}
+  button.primary{flex:1;background:var(--felt);color:#f2f6ee;border:none;border-radius:9px;
+    font-family:var(--disp);font-weight:700;font-size:16px;padding:14px;cursor:pointer;letter-spacing:.02em}
+  button.primary:active{filter:brightness(1.1)}
+  button.ghost{background:none;border:1px solid var(--line);border-radius:9px;color:var(--muted);
+    font-family:var(--body);font-size:13px;padding:14px 16px;cursor:pointer}
+
+  .result{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 16px;display:none}
+  .result.show{display:block}
+  .verdict{font-family:var(--disp);font-weight:700;font-size:32px;line-height:1.1;margin:2px 0 4px}
+  .verdict.raise{color:var(--good)} .verdict.call{color:var(--warn)} .verdict.fold{color:var(--bad)}
+  .verdict.check{color:var(--good)} .verdict.bet{color:var(--good)}
+  .why{font-size:13.5px;color:var(--text);margin:8px 0 14px}
+  .stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+  .stat{background:var(--surface2);border-radius:8px;padding:10px}
+  .stat .k{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .stat .v{font-family:var(--mono);font-size:19px;font-weight:600;margin-top:2px;font-variant-numeric:tabular-nums}
+  .bar{height:6px;border-radius:3px;background:var(--surface2);margin-top:12px;overflow:hidden;position:relative}
+  .bar .fill{height:100%;background:var(--felt);border-radius:3px}
+  .bar .needle{position:absolute;top:-3px;width:2px;height:12px;background:var(--gold)}
+  .bar-cap{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:5px}
+  .spin{color:var(--muted);font-family:var(--mono);font-size:12px}
+  button:focus-visible,input:focus-visible,.slot:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+  footer{margin-top:26px;font-size:11.5px;color:var(--muted)}
+</style>
+<div class="wrap">
+  <header>
+    <h1>Felt Advisor <span class="suit">♠</span></h1>
+    <span class="tag">study tool</span>
+  </header>
+  <p class="notice">練習・ハンド研究用。実対戦(カジノ・オンライン)でのリアルタイム使用は規約違反です。</p>
+
+  <section>
+    <div class="label">カード — スロットをタップして選択</div>
+    <div class="slots" id="slots">
+      <div class="slot-group">
+        <div class="slot" data-i="0" tabindex="0"></div>
+        <div class="slot" data-i="1" tabindex="0"></div>
+      </div>
+      <div class="slot-sep"></div>
+      <div class="slot-group">
+        <div class="slot" data-i="2" tabindex="0"></div>
+        <div class="slot" data-i="3" tabindex="0"></div>
+        <div class="slot" data-i="4" tabindex="0"></div>
+        <div class="slot" data-i="5" tabindex="0"></div>
+        <div class="slot" data-i="6" tabindex="0"></div>
+      </div>
+    </div>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <section>
+    <div class="label">状況</div>
+    <div class="nums">
+      <div class="field"><label>相手人数</label><input id="opps" type="number" inputmode="numeric" min="1" max="8" value="2"></div>
+      <div class="field"><label>ポット(ベット込)</label><input id="pot" type="number" inputmode="decimal" min="0" value="100"></div>
+      <div class="field"><label>コール額</label><input id="call" type="number" inputmode="decimal" min="0" value="0"></div>
+    </div>
+  </section>
+
+  <div class="actions">
+    <button class="primary" id="go">アクションを判定</button>
+    <button class="ghost" id="clear">クリア</button>
+  </div>
+
+  <section class="result" id="result" style="margin-top:18px">
+    <div class="label" id="stage"></div>
+    <div class="verdict" id="verdict"></div>
+    <div class="why" id="why"></div>
+    <div class="stats">
+      <div class="stat"><div class="k">勝率 (Equity)</div><div class="v" id="eq"></div></div>
+      <div class="stat"><div class="k">必要勝率</div><div class="v" id="need"></div></div>
+      <div class="stat"><div class="k">ポットオッズ</div><div class="v" id="odds"></div></div>
+    </div>
+    <div class="bar"><div class="fill" id="fill" style="width:0%"></div><div class="needle" id="needle" style="left:0%"></div></div>
+    <div class="bar-cap"><span>0%</span><span>金線 = 必要勝率</span><span>100%</span></div>
+  </section>
+
+  <footer>勝率はモンテカルロ法(1万回試行、相手はランダムレンジ)による推定。相手のレンジが強い場面では実際の必要マージンはより大きくなります。</footer>
+</div>
+<script>
+"use strict";
+const RANKS=["2","3","4","5","6","7","8","9","T","J","Q","K","A"];
+const SUITS=["♠","♥","♦","♣"];
+const RED=new Set([1,2]);
+// card id = rank(0-12)*4 + suit(0-3); rank value = rank+2
+const slots=[...document.querySelectorAll(".slot")];
+const grid=document.getElementById("grid");
+let sel=new Array(7).fill(null); // card ids
+let active=0;
+
+// build grid: rows by suit, columns A..2
+for(let s=0;s<4;s++){
+  for(let r=12;r>=0;r--){
+    const b=document.createElement("button");
+    b.className="cardbtn"+(RED.has(s)?" red":"");
+    b.dataset.id=r*4+s;
+    b.innerHTML=RANKS[r]+'<span class="s">'+SUITS[s]+"</span>";
+    b.addEventListener("click",()=>pick(r*4+s));
+    grid.appendChild(b);
+  }
+}
+function setActive(i){active=i;render();}
+slots.forEach(el=>{
+  el.addEventListener("click",()=>{
+    const i=+el.dataset.i;
+    if(sel[i]!==null){sel[i]=null;setActive(i);}else setActive(i);
+  });
+});
+function pick(id){
+  if(sel.includes(id))return;
+  sel[active]=id;
+  // advance to next empty slot
+  let n=sel.findIndex((v,i)=>v===null&&i>active);
+  if(n<0)n=sel.findIndex(v=>v===null);
+  if(n>=0)active=n;
+  render();
+}
+function render(){
+  slots.forEach(el=>{
+    const i=+el.dataset.i,id=sel[i];
+    el.classList.toggle("active",i===active);
+    el.classList.toggle("filled",id!==null);
+    el.classList.toggle("red",id!==null&&RED.has(id%4));
+    el.innerHTML=id===null?"":RANKS[Math.floor(id/4)]+'<span class="s">'+SUITS[id%4]+"</span>";
+  });
+  grid.querySelectorAll(".cardbtn").forEach(b=>{b.disabled=sel.includes(+b.dataset.id);});
+}
+render();
+
+// ---- 5-card evaluator: higher score = better hand ----
+function eval5(c){ // c: array of 5 ids
+  const rs=c.map(x=>Math.floor(x/4)+2).sort((a,b)=>b-a);
+  const flush=c.every(x=>x%4===c[0]%4);
+  // straight (A can play low)
+  let uniq=[...new Set(rs)],straightHigh=0;
+  if(uniq.length===5){
+    if(uniq[0]-uniq[4]===4)straightHigh=uniq[0];
+    else if(uniq[0]===14&&uniq[1]===5&&uniq[4]===2)straightHigh=5;
+  }
+  const cnt={};rs.forEach(r=>cnt[r]=(cnt[r]||0)+1);
+  const groups=Object.entries(cnt).map(([r,n])=>[+r,n])
+    .sort((a,b)=>b[1]-a[1]||b[0]-a[0]);
+  const kick=groups.flatMap(g=>Array(g[1]).fill(g[0]));
+  const K=(cat)=>((((cat*15+kick[0])*15+kick[1])*15+kick[2])*15+kick[3])*15+kick[4];
+  const S=(cat,high)=>((((cat*15+high)*15)*15)*15)*15; // straights rank by high card only
+  if(flush&&straightHigh)return S(8,straightHigh);
+  if(groups[0][1]===4)return K(7);
+  if(groups[0][1]===3&&groups[1][1]===2)return K(6);
+  if(flush)return K(5);
+  if(straightHigh)return S(4,straightHigh);
+  if(groups[0][1]===3)return K(3);
+  if(groups[0][1]===2&&groups[1][1]===2)return K(2);
+  if(groups[0][1]===2)return K(1);
+  return K(0);
+}
+function comb(n,k,cb){const idx=Array.from({length:k},(_,i)=>i);
+  while(true){cb(idx);let i=k-1;
+    while(i>=0&&idx[i]===n-k+i)i--;
+    if(i<0)break;idx[i]++;for(let j=i+1;j<k;j++)idx[j]=idx[j-1]+1;}}
+const COMBS75=[];comb(7,5,idx=>COMBS75.push([...idx]));
+function eval7(c){let best=-1;
+  for(const idx of COMBS75){
+    const v=eval5([c[idx[0]],c[idx[1]],c[idx[2]],c[idx[3]],c[idx[4]]]);
+    if(v>best)best=v;}
+  return best;}
+
+function simulate(hole,board,nOpp,iters){
+  const dead=new Set([...hole,...board]);
+  const deck=[];for(let i=0;i<52;i++)if(!dead.has(i))deck.push(i);
+  const needBoard=5-board.length;
+  let win=0,tie=0;
+  for(let t=0;t<iters;t++){
+    // partial Fisher-Yates for needed cards
+    const need=needBoard+2*nOpp;
+    for(let i=0;i<need;i++){
+      const j=i+Math.floor(Math.random()*(deck.length-i));
+      const tmp=deck[i];deck[i]=deck[j];deck[j]=tmp;
+    }
+    const fullBoard=board.concat(deck.slice(0,needBoard));
+    const my=eval7(hole.concat(fullBoard));
+    let beat=false,tied=false;
+    for(let o=0;o<nOpp;o++){
+      const oh=[deck[needBoard+2*o],deck[needBoard+2*o+1]];
+      const ov=eval7(oh.concat(fullBoard));
+      if(ov>my){beat=true;break;}
+      if(ov===my)tied=true;
+    }
+    if(!beat){if(tied)tie++;else win++;}
+  }
+  return (win+tie/2)/iters;
+}
+
+const $=id=>document.getElementById(id);
+$("clear").addEventListener("click",()=>{sel.fill(null);active=0;render();$("result").classList.remove("show");});
+$("go").addEventListener("click",()=>{
+  const hole=[sel[0],sel[1]].filter(v=>v!==null);
+  if(hole.length<2){alert("自分のカード2枚を選択してください");return;}
+  const board=sel.slice(2).filter(v=>v!==null);
+  if(board.length===1||board.length===2){alert("ボードは0枚(プリフロップ)、3枚以上で入力してください");return;}
+  const nOpp=Math.min(8,Math.max(1,+$("opps").value||1));
+  const pot=Math.max(0,+$("pot").value||0);
+  const call=Math.max(0,+$("call").value||0);
+  const btn=$("go");btn.disabled=true;btn.textContent="計算中…";
+  setTimeout(()=>{
+    const eq=simulate(hole,board,nOpp,10000);
+    show(eq,board.length,nOpp,pot,call);
+    btn.disabled=false;btn.textContent="アクションを判定";
+  },30);
+});
+
+function show(eq,nBoard,nOpp,pot,call){
+  const stage=nBoard===0?"プリフロップ":nBoard===3?"フロップ":nBoard===4?"ターン":"リバー";
+  const need=call>0?call/(pot+call):0; // pot includes opponent's bet
+  const fair=1/(nOpp+1);
+  let act,cls,why;
+  if(call>0){
+    if(eq>=Math.max(need*1.6,fair*1.5)){act="レイズ";cls="raise";
+      why=`勝率${p(eq)}は必要勝率${p(need)}を大きく上回り、${nOpp}人相手の平均(${p(fair)})に対しても十分強い。バリューを取りにいく場面。`;}
+    else if(eq>=need){act="コール";cls="call";
+      why=`勝率${p(eq)} > 必要勝率${p(need)}でコールはプラス期待値。ただしレイズするほどのマージンはない。`;}
+    else{act="フォールド";cls="fold";
+      why=`勝率${p(eq)}が必要勝率${p(need)}に届かず、コールはマイナス期待値。降りるのが正解。`;}
+  }else{
+    if(eq>=fair*1.4){act="ベット";cls="bet";
+      why=`勝率${p(eq)}は${nOpp}人相手の平均(${p(fair)})を大きく超える。ポットの50〜70%のバリューベット推奨。`;}
+    else{act="チェック";cls="check";
+      why=`勝率${p(eq)}は平均(${p(fair)})付近。無料でカードを見られるならチェックが無難。`;}
+  }
+  $("stage").textContent=`${stage} ・ 相手${nOpp}人`;
+  const v=$("verdict");v.textContent=act;v.className="verdict "+cls;
+  $("why").textContent=why;
+  $("eq").textContent=p(eq);
+  $("need").textContent=call>0?p(need):"—";
+  $("odds").textContent=call>0?`${((pot+call)/call).toFixed(1)} : 1`:"—";
+  $("fill").style.width=(eq*100).toFixed(1)+"%";
+  $("needle").style.left=call>0?(need*100).toFixed(1)+"%":"0%";
+  $("needle").style.display=call>0?"block":"none";
+  $("result").classList.add("show");
+  $("result").scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+const p=x=>(x*100).toFixed(1)+"%";
+</script>
