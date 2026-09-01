@@ -447,11 +447,39 @@ function takeRake(){
 /* ---- CPU AI ---- */
 async function cpuTurn(p){
   await sleep(500+Math.random()*700);
+  const toCall=G.currentBet-p.bet;
+  const rand=Math.random();
+  if(G.stage===0){
+    // preflop: Chen-tier ranges, loosened for loose personalities
+    const eff=chenScore(p.hole)+(1-p.tight)*3+(rand-.5);
+    const openRaised=G.currentBet>G.bb;
+    const priceBB=toCall/G.bb;
+    const[mn,mx]=raiseLimits(p);
+    const openTo=Math.min(mx,Math.max(mn,Math.round(G.bb*(2.5+rand*1.5))));
+    const threebet=Math.min(p.bet+p.chips,Math.max(G.currentBet+G.minRaise,Math.round(G.currentBet*(2.5+rand))));
+    if(eff>=9.5){
+      if(!openRaised)applyAction(p,"raise",openTo);
+      else if(rand<.55*p.aggr&&p.chips>toCall)applyAction(p,"raise",threebet);
+      else applyAction(p,"call");
+    }else if(eff>=7.5){
+      if(!openRaised)applyAction(p,"raise",openTo);
+      else if(priceBB<=8)applyAction(p,"call");
+      else applyAction(p,"fold");
+    }else if(eff>=5.5){
+      if(toCall<=0)applyAction(p,rand<.35*p.aggr?"raise":"check",openTo);
+      else if(!openRaised)applyAction(p,"call");
+      else if(priceBB<=4)applyAction(p,"call");
+      else applyAction(p,"fold");
+    }else{
+      if(toCall<=0)applyAction(p,"check");
+      else if(priceBB<=1&&rand<.6)applyAction(p,"call");
+      else applyAction(p,"fold");
+    }
+    render();return;
+  }
   const opp=activeCount()-1;
   const eq=equity(p.hole,G.board,Math.min(opp,3),200);
-  const toCall=G.currentBet-p.bet;
   const potOdds=toCall>0?toCall/(G.pot+toCall):0;
-  const rand=Math.random();
   const strength=eq*p.tight+(rand*.08-.04);
   if(toCall<=0){
     if(strength>0.55||((rand<.12*p.aggr)&&G.stage>0)){
@@ -521,6 +549,22 @@ $("autoAdvice").onchange=e=>{if(G)G.autoAdv=e.target.checked;};
 
 /* ================= coach ================= */
 const STAGE_JP=["プリフロップ","フロップ","ターン","リバー"];
+function chenScore(h){
+  const hi=Math.max(h[0].r,h[1].r),lo=Math.min(h[0].r,h[1].r);
+  const val=r=>r===12?10:r===11?8:r===10?7:r===9?6:(r+2)/2;
+  if(hi===lo)return Math.max(5,val(hi)*2);
+  let s=val(hi);
+  if(h[0].s===h[1].s)s+=2;
+  const gap=hi-lo-1;
+  s-=gap===0?0:gap===1?1:gap===2?2:gap===3?4:5;
+  if(gap<=1&&hi<10)s+=1; // both below Q with 0-1 gap: straight potential
+  return Math.ceil(s*2)/2;
+}
+function holeName(h){
+  const hi=Math.max(h[0].r,h[1].r),lo=Math.min(h[0].r,h[1].r);
+  const n=r=>RNAME[RANKS[r]]||RANKS[r];
+  return hi===lo?n(hi)+n(lo):n(hi)+n(lo)+(h[0].s===h[1].s?"s":"o");
+}
 const ACT_JP={fold:"フォールド",check:"チェック",call:"コール",raise:"レイズ / ベット"};
 function computeAdvice(p){
   const opp=activeCount()-1;
@@ -579,14 +623,49 @@ function computeAdvice(p){
   const effPot=G.pot+bonus;
   const potOdds=toCall>0?toCall/(effPot+toCall):0;
   const poPct=(potOdds*100).toFixed(1);
-  if(toCall>0){
+
+  if(G.stage===0){
+    // --- preflop: hand-strength tiers (Chen formula), not multiway random equity ---
+    const cs=chenScore(p.hole),hn=holeName(p.hole);
+    const late=pos==="レイトポジション";
+    const openRaised=G.currentBet>G.bb;
+    const priceBB=toCall/G.bb;
+    const tier=cs>=10?"プレミアム":cs>=8?"強い":cs>=6?"有望":cs>=5?"投機的":"弱い";
+    reasons.push(`プリフロップ評価: ${hn}(Chenスコア ${cs} — ${tier}ハンド)。プリフロップは「多人数のランダム手札に対する勝率」ではなく、実際に参加してくるレンジを想定したハンドの絶対的な強さで判断します。上の勝率表示は参考値です。`);
+    if(cs>=10){
+      rec="raise";
+      reasons.push(`AA・KK・QQ・AK・AQs 級のプレミアムハンドです。リレイズを含め常に攻めるべきで、コール止まりは相手に安いドローを許すだけ損です。`);
+    }else if(cs>=8){
+      if(!openRaised){rec="raise";reasons.push(`AQ・AJs・KQs・TT 級の強いハンドです。まだレイズが入っていないので、オープンレイズで主導権を握るのが標準です。リンプやコール止まりは弱すぎます。`);}
+      else if(priceBB<=8){rec="call";reasons.push(`強いハンドなので、この程度のレイズ(${toCall} = 約${priceBB.toFixed(1)}BB)には少なくともコールで続行すべきです。相手が慎重なタイプでなければリレイズも選択肢です。`);}
+      else{rec=effEq>potOdds?"call":"fold";reasons.push(`巨大なレイズ(約${priceBB.toFixed(0)}BB)に対しては相手のレンジがAA/KK級に絞られるため、AQ級でも慎重に。ここは実効勝率とオッズの比較で判断します。`);}
+    }else if(cs>=6){
+      if(!openRaised){
+        if(toCall>0){rec="call";reasons.push(`有望なハンドです。レイズ前なら安く参加する価値があります。`);}
+        else if(late){rec="raise";reasons.push(`有望なハンドかつレイトポジション。誰も攻めていないならレイズしてブラインドを奪いに行くのが標準です。`);}
+        else{rec="check";reasons.push(`有望ですが決定打に欠けるため、アーリー/ミドルではチェックで様子見が無難です。`);}
+      }
+      else if(priceBB<=5){rec="call";reasons.push(`スーテッドコネクタや中ペア級は、安いレイズ(≦5BB)ならフロップを見る価値があります(セットやドローでの大勝ち狙い)。`);}
+      else{rec="fold";reasons.push(`このクラスのハンドで大きなレイズを追うのは長期的にマイナスです。`);}
+    }else if(cs>=5){
+      if(!toCall)rec="check";
+      else if(priceBB<=2){rec="call";reasons.push(`投機的ハンドですが、ほぼ無料(≦2BB)なら見る価値があります。`);}
+      else{rec="fold";reasons.push(`投機的ハンドで${priceBB.toFixed(1)}BBを払う価値はありません。`);}
+      if(!toCall)reasons.push(`投機的ハンドです。無料で見られるならチェック、レイズが来たら基本は降ります。`);
+    }else{
+      if(!toCall){rec="check";reasons.push(`弱いハンドですが無料ならフロップを見ましょう。`);}
+      else if(bonus>0&&priceBB<=5){rec="call";reasons.push(`通常なら即フォールドですが、有効なボーナスルールの期待値(約 +${bonus})を考えると、この価格(${toCall})なら参加が正当化されます。`);}
+      else if(effEq>potOdds){rec="call";reasons.push(`弱いハンドですがオッズが極端に良い(${poPct}%)ためコールが許容されます。`);}
+      else{rec="fold";reasons.push(`弱いハンドで支払う価値がありません。フォールドが最善です。`);}
+    }
+  }else if(toCall>0){
     reasons.push(`コールに ${toCall} 必要で、ポットは ${G.pot}${bonus?`(ボーナス期待込みで実質約 ${effPot})`:""}。ポットオッズは ${poPct}%。実効勝率がこれを上回ればコールは数学的にプラスです。`);
-    if(effEq>potOdds+0.22&&effEq>fair){rec="raise";reasons.push(`実効勝率がポットオッズを大きく上回っています(${(effEq*100).toFixed(1)}% ≫ ${poPct}%)。バリューを取るためレイズが最善です。`);}
+    if(effEq>potOdds+0.22&&effEq>fair){rec="raise";reasons.push(`実効勝率がポットオッズを大きく上回っています(${(effEq*100).toFixed(1)}% ≫ ${poPct}%)。バリューを取るためレイズが最善です。目安はポットの6〜7割(約 ${Math.round(G.pot*0.65)})の上乗せです。`);}
     else if(effEq>potOdds){rec="call";reasons.push(`実効勝率(${(effEq*100).toFixed(1)}%)がポットオッズ(${poPct}%)を上回るため、コールで期待値プラスです。`);}
     else{rec="fold";reasons.push(`実効勝率(${(effEq*100).toFixed(1)}%)がポットオッズ(${poPct}%)を下回り、コールは長期的に損失になります。フォールドが最善です。`);}
   }else{
-    if(effEq>fair+0.18){rec="raise";reasons.push(`平均を大きく上回る勝率です。チェックで無料カードを与えるより、ベットしてポットを育てつつ相手のドローに料金を課すべきです。`);}
-    else if(effEq>fair+0.05){rec=G.stage===0?"raise":"check";reasons.push(G.stage===0?`平均以上のハンドなので、プリフロップはレイズして主導権を握るのが標準です。`:`やや有利ですが、決定的ではないためチェックでポットを小さく保つのも妥当です。`);}
+    if(effEq>fair+0.15){rec="raise";reasons.push(`平均を大きく上回る勝率です。チェックで無料カードを与えるより、ベットしてポットを育てつつ相手のドローに料金を課すべきです。サイズはポットの5〜7割(約 ${Math.max(G.bb*2,Math.round(G.pot*0.6))})が目安です。`);}
+    else if(effEq>fair+0.04){rec="check";reasons.push(`やや有利ですが決定的ではないため、チェックでポットをコントロールするのが無難です。相手が消極的ならブラフ気味の小さなベットも選択肢です。`);}
     else{rec="check";reasons.push(`勝率は平均以下です。無料で次のカードを見られるチェックが最善で、ベットしてもより強いハンドしかコールしません。`);}
   }
   reasons.push(`ポジション: ${pos}。${pos==="レイトポジション"?"後から行動できるため、やや広いレンジで攻められます。":pos==="アーリーポジション"?"先に行動する不利があるため、通常より慎重に。":"標準的な判断で問題ありません。"}`);
