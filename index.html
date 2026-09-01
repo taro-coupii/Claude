@@ -95,6 +95,11 @@ header button{background:var(--panel2);color:var(--text);border:1px solid var(--
 .advCard .stats{display:flex;gap:14px;margin:8px 0;font-size:12px}
 .advCard .stats div span{display:block;color:var(--muted);font-size:11px}
 .advCard .why{border-top:1px dashed var(--line);padding-top:8px;margin-top:4px}
+#trend{padding:10px 16px;border-top:1px solid var(--line)}
+#trend .tHead{display:flex;align-items:baseline;gap:8px;margin-bottom:4px}
+#trend .tHead span{font-size:11px;letter-spacing:.15em;color:var(--muted)}
+#trend .tHead b{font-size:20px;color:var(--gold);font-family:"Bebas Neue",serif;letter-spacing:.04em}
+#trend .tHead small{color:var(--muted);font-size:11px}
 #log{padding:8px 16px;border-top:1px solid var(--line);max-height:140px;overflow-y:auto;font-size:12px;color:var(--muted);line-height:1.7}
 
 /* ---- modals ---- */
@@ -162,6 +167,7 @@ header button{background:var(--panel2);color:var(--text);border:1px solid var(--
       <label><input type="checkbox" id="autoAdvice">事前に自動表示</label>
     </div>
     <div id="coachBody"><p class="empty">あなたの番で「アドバイスを見る」を押すと、取るべきアクションと論拠を表示します。各ハンド終了後には、実際のアクションの検証レポートを確認できます。</p></div>
+    <div id="trend" hidden></div>
     <div id="log"></div>
   </div>
 </div>
@@ -283,6 +289,7 @@ function newGame(nCpu,stack,sb,autoAdv,review,rules){
   G.standupActive=!!G.rules.standup;
   if(G.standupActive)logMsg("スタンドアップゲーム開始!ポットを取った人から着席です。");
   $("autoAdvice").checked=autoAdv;
+  renderTrend();
   startHand();
 }
 
@@ -292,7 +299,7 @@ function startHand(){
   const alive=alivePlayers();
   if(G.players[0].out){endGame(false);return;}
   if(alive.length===1){endGame(true);return;}
-  G.handNo++;G.records=[];
+  G.handNo++;G.records=[];G.handActs=[];
   G.deck=newDeck();G.board=[];G.pot=0;G.stage=0;
   G.players.forEach(p=>{p.hole=null;p.bet=0;p.total=0;p.folded=p.out;p.allIn=false;p.lastAct="";});
   // move button to next alive
@@ -364,6 +371,8 @@ async function runOutBoard(){
 
 /* ---- actions ---- */
 function applyAction(p,act,amt){
+  G.handActs.push({p,stage:G.stage,act,facing:G.currentBet>p.bet});
+  p.nActs=(p.nActs||0)+1;if(act==="raise")p.nRaises=(p.nRaises||0)+1;
   if(act==="fold"){p.folded=true;p.lastAct="フォールド";}
   else if(act==="check"){p.lastAct="チェック";}
   else if(act==="call"){const d=G.currentBet-p.bet;postBet(p,d);p.lastAct=p.allIn?"オールイン":"コール "+G.currentBet;}
@@ -517,27 +526,71 @@ function computeAdvice(p){
   const opp=activeCount()-1;
   const eq=equity(p.hole,G.board,opp,400);
   const toCall=Math.min(G.currentBet-p.bet,p.chips);
-  const potOdds=toCall>0?toCall/(G.pot+toCall):0;
   const fair=1/(opp+1);
   const pos=positionName(0);
   const reasons=[];
   let rec;
-  const eqPct=(eq*100).toFixed(1),poPct=(potOdds*100).toFixed(1);
+  const eqPct=(eq*100).toFixed(1);
   const handDesc=G.board.length>=3?CATNAME[eval7(p.hole.concat(G.board))[0]]:null;
   reasons.push(`推定勝率は約 ${eqPct}%(モンテカルロ法、対戦相手 ${opp} 人)。${opp+1} 人での平均勝率 ${(fair*100).toFixed(0)}% が損益分岐の目安です。`);
   if(handDesc)reasons.push(`現時点の役: ${handDesc}。`);
+
+  // --- opponent line reads ---
+  let raisersNow=0;
+  for(const o of G.players.filter(q=>!q.human&&!q.folded&&!q.out)){
+    const acts=G.handActs.filter(a=>a.p===o);
+    const preRaise=acts.some(a=>a.stage===0&&a.act==="raise");
+    const postAgg=acts.some(a=>a.stage>0&&a.act==="raise");
+    const lateAgg=acts.some(a=>a.stage>=2&&a.act==="raise");
+    if(acts.some(a=>a.stage===G.stage&&a.act==="raise"))raisersNow++;
+    let read;
+    if(lateAgg)read="ターン以降でレイズしており、通常ツーペア以上か完成したドロー。かなり強いレンジ";
+    else if(preRaise&&postAgg)read="プリフロップから一貫して攻めており、オーバーペアやトップペア以上が中心の強いレンジ";
+    else if(preRaise)read="プリフロップレイズ後は静か。AK系の空振りや中ペアの可能性も残る";
+    else if(acts.some(a=>a.act==="call"&&a.facing))read="コール主体のライン。中程度のペアやドローが中心で、モンスターは考えにくい";
+    else if(acts.length)read="チェック中心の消極的なライン。弱めのレンジを示唆";
+    else read="まだ行動情報なし";
+    const rr=o.nActs>=8?(o.nRaises||0)/o.nActs:-1;
+    const tend=rr<0?"":rr>0.3?"(これまでのプレイは攻撃的。レイズをやや割り引いて可)":rr<0.12?"(これまでのプレイは慎重。レイズは本物の可能性大)":"";
+    reasons.push(`🔎 ${o.name} のライン: ${read}${tend}。`);
+  }
+  let effEq=eq;
+  if(raisersNow>0){
+    effEq=Math.max(0,eq-0.06*raisersNow);
+    reasons.push(`このストリートでレイズが ${raisersNow} 件入っています。勝率のモンテカルロ推定はランダムな手札を仮定しているため、実効勝率は約 ${(effEq*100).toFixed(1)}% まで割り引いて判断します。`);
+  }
+
+  // --- house-rule impact ---
+  let bonus=0;const others=G.players.filter(q=>q!==p&&!q.out).length;
+  const h=p.hole,u=G.sb*10;
+  if(G.rules.r27o&&h[0].s!==h[1].s&&((isRank(h[0],"2")&&isRank(h[1],"7"))||(isRank(h[0],"7")&&isRank(h[1],"2")))){
+    bonus+=others*u;reasons.push(`🃏 27oゲーム有効: この 2-7o で勝てば全員から ${u} ずつ(計 ${others*u})のボーナス。通常なら即フォールドの紙屑ハンドですが、その分だけ広く戦う価値があります。`);}
+  if(G.rules.j5&&((isRank(h[0],"J")&&isRank(h[1],"5"))||(isRank(h[0],"5")&&isRank(h[1],"J")))){
+    bonus+=G.sb*30;reasons.push(`🕺 ジャクソンファイブ有効: J5 で勝てばチップリーダーから ${G.sb*30} のボーナス。実質的なインプライドオッズが上がっています。`);}
+  if(G.rules.streak&&p.streak>=2){
+    bonus+=others*u;reasons.push(`🔥 連続ボーナス有効: 現在 ${p.streak} 連続獲得中。このポットを取れば全員から ${u} ずつ入るため、僅差の勝負でも積極的に取りに行く価値が上がっています。`);}
+  if(G.standupActive&&p.standing){
+    reasons.push(`🧍 スタンドアップゲーム進行中: まだ着席できていません。ポットを 1 つ取れば着席でき、最後の 1 人の支払い(全員に ${G.sb*5})を回避できます。通常よりやや広く参加する価値があります。`);}
+  if(G.rules.openCap&&openCapActive()){
+    reasons.push(`📏 オープンキャップ有効: オープンレイズは ${G.bb*2}〜${G.bb*5} に制限。強いハンドでもポットを一気に膨らませられないため、後のストリートでのプレイアビリティ(ポジションと技術)の価値が相対的に上がります。`);}
+  if(G.rules.rake&&G.stage<3){
+    reasons.push(`💰 ディーラーチップ有効: リバーまで行くと ${G.sb*2} が徴収されます。僅差のオッズで長いストリートを追う価値がその分だけ下がります。`);}
+
+  const effPot=G.pot+bonus;
+  const potOdds=toCall>0?toCall/(effPot+toCall):0;
+  const poPct=(potOdds*100).toFixed(1);
   if(toCall>0){
-    reasons.push(`コールに ${toCall} 必要で、ポットは ${G.pot}。ポットオッズは ${poPct}%(= ${toCall} ÷ ${G.pot+toCall})。勝率がこれを上回ればコールは数学的にプラスです。`);
-    if(eq>potOdds+0.22&&eq>fair){rec="raise";reasons.push(`勝率がポットオッズを大きく上回っています(${eqPct}% ≫ ${poPct}%)。バリューを取るためレイズが最善です。`);}
-    else if(eq>potOdds){rec="call";reasons.push(`勝率(${eqPct}%)がポットオッズ(${poPct}%)を上回るため、コールで期待値プラスです。`);}
-    else{rec="fold";reasons.push(`勝率(${eqPct}%)がポットオッズ(${poPct}%)を下回り、コールは長期的に損失になります。フォールドが最善です。`);}
+    reasons.push(`コールに ${toCall} 必要で、ポットは ${G.pot}${bonus?`(ボーナス期待込みで実質約 ${effPot})`:""}。ポットオッズは ${poPct}%。実効勝率がこれを上回ればコールは数学的にプラスです。`);
+    if(effEq>potOdds+0.22&&effEq>fair){rec="raise";reasons.push(`実効勝率がポットオッズを大きく上回っています(${(effEq*100).toFixed(1)}% ≫ ${poPct}%)。バリューを取るためレイズが最善です。`);}
+    else if(effEq>potOdds){rec="call";reasons.push(`実効勝率(${(effEq*100).toFixed(1)}%)がポットオッズ(${poPct}%)を上回るため、コールで期待値プラスです。`);}
+    else{rec="fold";reasons.push(`実効勝率(${(effEq*100).toFixed(1)}%)がポットオッズ(${poPct}%)を下回り、コールは長期的に損失になります。フォールドが最善です。`);}
   }else{
-    if(eq>fair+0.18){rec="raise";reasons.push(`平均を大きく上回る勝率です。チェックで無料カードを与えるより、ベットしてポットを育てつつ相手のドローに料金を課すべきです。`);}
-    else if(eq>fair+0.05){rec=G.stage===0?"raise":"check";reasons.push(G.stage===0?`平均以上のハンドなので、プリフロップはレイズして主導権を握るのが標準です。`:`やや有利ですが、決定的ではないためチェックでポットを小さく保つのも妥当です。`);}
+    if(effEq>fair+0.18){rec="raise";reasons.push(`平均を大きく上回る勝率です。チェックで無料カードを与えるより、ベットしてポットを育てつつ相手のドローに料金を課すべきです。`);}
+    else if(effEq>fair+0.05){rec=G.stage===0?"raise":"check";reasons.push(G.stage===0?`平均以上のハンドなので、プリフロップはレイズして主導権を握るのが標準です。`:`やや有利ですが、決定的ではないためチェックでポットを小さく保つのも妥当です。`);}
     else{rec="check";reasons.push(`勝率は平均以下です。無料で次のカードを見られるチェックが最善で、ベットしてもより強いハンドしかコールしません。`);}
   }
   reasons.push(`ポジション: ${pos}。${pos==="レイトポジション"?"後から行動できるため、やや広いレンジで攻められます。":pos==="アーリーポジション"?"先に行動する不利があるため、通常より慎重に。":"標準的な判断で問題ありません。"}`);
-  return {rec,eq,potOdds,toCall,pot:G.pot,reasons};
+  return {rec,eq,effEq,potOdds,toCall,pot:G.pot,reasons};
 }
 function positionName(idx){
   const n=alivePlayers().length;
@@ -556,11 +609,40 @@ function showAdvice(){
       <div class="rec">▶ ${ACT_JP[a.rec]}</div>
       <div class="stats">
         <div class="num"><span>推定勝率</span><b>${(a.eq*100).toFixed(1)}%</b></div>
+        ${a.effEq<a.eq?`<div class="num"><span>実効勝率</span><b>${(a.effEq*100).toFixed(1)}%</b></div>`:""}
         <div class="num"><span>ポットオッズ</span><b>${a.toCall>0?(a.potOdds*100).toFixed(1)+"%":"—"}</b></div>
         <div class="num"><span>ポット</span><b>${a.pot}</b></div>
       </div>
       <div class="why">${a.reasons.map(r=>`<p style="margin:4px 0">・${r}</p>`).join("")}</div>
     </div>`;
+}
+/* ---- decision-accuracy trend (persisted per browser) ---- */
+let TREND=[];try{TREND=JSON.parse(localStorage.getItem("poker_trend_v1"))||[];}catch(e){}
+function saveTrend(){try{localStorage.setItem("poker_trend_v1",JSON.stringify(TREND.slice(-50)));}catch(e){}}
+function recordHandScore(){
+  if(!G.records.length)return;
+  const s=G.records.reduce((a,r)=>a+({ok:1,so:.5,ng:0}[verdictOf(r.advice.rec,r.action)[0]]),0)/G.records.length;
+  TREND.push({n:TREND.length+1,s});saveTrend();renderTrend();
+}
+function renderTrend(){
+  const el=$("trend");
+  if(!TREND.length){el.hidden=true;return;}
+  el.hidden=false;
+  const last=TREND.slice(-20),rec10=TREND.slice(-10);
+  const avg=Math.round(rec10.reduce((a,b)=>a+b.s,0)/rec10.length*100);
+  const W=280,H=56,P=8;
+  const xs=i=>P+(W-2*P)*(last.length===1?.5:i/(last.length-1));
+  const ys=v=>H-P-(H-2*P)*v;
+  const pts=last.map((d,i)=>[xs(i),ys(d.s)]);
+  const path=pts.map((q,i)=>(i?"L":"M")+q[0].toFixed(1)+" "+q[1].toFixed(1)).join(" ");
+  const[ex,ey]=pts[pts.length-1];
+  el.innerHTML=`<div class="tHead"><span>判断精度トレンド</span><b class="num">${avg}%</b><small>直近${rec10.length}ハンド平均</small></div>
+  <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="ハンドごとの判断精度(推奨との一致度)の推移。直近${rec10.length}ハンド平均 ${avg}%">
+    <line x1="${P}" y1="${ys(.5)}" x2="${W-P}" y2="${ys(.5)}" stroke="var(--line)" stroke-dasharray="3 3"/>
+    <path d="${path}" fill="none" stroke="var(--gold)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    ${last.map((d,i)=>`<circle cx="${xs(i).toFixed(1)}" cy="${ys(d.s).toFixed(1)}" r="3" fill="var(--gold)"><title>第${d.n}ハンド: ${Math.round(d.s*100)}%</title></circle>`).join("")}
+    <circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="4.5" fill="var(--neon)" stroke="var(--panel)" stroke-width="2"><title>最新: ${Math.round(last[last.length-1].s*100)}%</title></circle>
+  </svg>`;
 }
 function clearCoach(){$("coachBody").innerHTML='<p class="empty">あなたの番で「アドバイスを見る」を押すとアドバイスを表示します。</p>';}
 
@@ -631,6 +713,7 @@ async function showdown(){
   await endHand(results.join(" / "));
 }
 async function endHand(summary){
+  recordHandScore();
   G.players.forEach(p=>{if(p.chips<=0&&!p.out){p.out=true;logMsg(`${p.name} は敗退しました。`);}});
   G.pot=0;render();
   $("actInfo").textContent=summary;
