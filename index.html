@@ -15,6 +15,7 @@ button{font-family:inherit;cursor:pointer;border:none;border-radius:8px}
 button:disabled{opacity:.4;cursor:default}
 button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .num{font-variant-numeric:tabular-nums}
+[hidden]{display:none!important}
 
 /* ---- layout ---- */
 #app{display:flex;flex-direction:column;min-height:100vh}
@@ -32,7 +33,7 @@ header button{background:var(--panel2);color:var(--text);border:1px solid var(--
 #table{position:relative;flex:1;min-height:480px;border-radius:50%/38%;
   background:radial-gradient(ellipse at 50% 40%,var(--felt-hi),var(--felt) 70%);
   border:14px solid #23150c;box-shadow:inset 0 0 60px rgba(0,0,0,.55),0 8px 30px rgba(0,0,0,.5);margin:24px 30px}
-#board{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);display:flex;gap:8px;align-items:center}
+#board{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);display:flex;gap:8px;align-items:center;z-index:3}
 #potLine{position:absolute;left:50%;top:26%;transform:translateX(-50%);text-align:center}
 #potLine .lbl{font-size:11px;letter-spacing:.2em;color:var(--muted)}
 #potLine .amt{font-size:22px;color:var(--gold);font-family:"Shippori Mincho",serif}
@@ -104,6 +105,17 @@ header button{background:var(--panel2);color:var(--text);border:1px solid var(--
 .rvItem .verdict{margin-left:auto;font-weight:700}
 .rvItem .verdict.ok{color:var(--good)}.rvItem .verdict.ng{color:var(--bad)}.rvItem .verdict.so{color:var(--warn)}
 .rvItem .why{margin-top:6px;color:var(--text);line-height:1.7;font-size:13px}
+.seat{z-index:1}
+@media(max-width:640px){
+  .card{width:26px;height:36px;font-size:11px}
+  .card .st{font-size:10px}
+  .card.big{width:34px;height:48px;font-size:14px}
+  .card.big .st{font-size:13px}
+  #board{gap:4px}
+  .seat{width:96px}
+  .seat .nm{font-size:11px}
+  #table{margin:16px 8px;border-width:8px}
+}
 </style>
 
 <div id="app">
