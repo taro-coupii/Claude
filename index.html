@@ -573,6 +573,52 @@ function holeName(h){
   return hi===lo?n(hi)+n(lo):n(hi)+n(lo)+(h[0].s===h[1].s?"s":"o");
 }
 const ACT_JP={fold:"フォールド",check:"チェック",call:"コール",raise:"レイズ / ベット"};
+function straightOutRanks(all,hole){ // ranks completing a straight that uses >=1 hole card
+  const have=new Set(all.map(c=>c.r));
+  const outs=new Set();
+  for(let add=0;add<13;add++){
+    if(have.has(add))continue;
+    for(let hi=3;hi<=12;hi++){
+      const win=hi===3?[12,0,1,2,3]:[hi-4,hi-3,hi-2,hi-1,hi];
+      if(!win.includes(add))continue;
+      if(win.every(r=>r===add||have.has(r))&&win.some(r=>r!==add&&hole.some(h=>h.r===r))){outs.add(add);break;}
+    }
+  }
+  return outs.size;
+}
+function detectDraws(hole,board){
+  if(board.length<3||board.length>4)return null;
+  const all=hole.concat(board);
+  const made=eval7(all)[0];
+  const sc=[0,0,0,0];all.forEach(c=>sc[c.s]++);
+  let fd=-1;
+  for(let s=0;s<4;s++)if(sc[s]===4&&hole.some(h=>h.s===s))fd=s;
+  const fOuts=(fd>=0&&made<5)?9:0;
+  const sRanks=made>=4?0:straightOutRanks(all,hole);
+  const outs=fOuts+sRanks*4-(fd>=0?sRanks:0); // avoid double-counting the flush suit
+  if(outs<=0)return null;
+  const parts=[];
+  if(fOuts)parts.push(`${SUITS[fd]}のフラッシュドロー(9アウツ)`);
+  if(sRanks>=2)parts.push(`ストレートドロー・両面級(完成ランク${sRanks}種 ≒ ${sRanks*4}アウツ)`);
+  else if(sRanks===1)parts.push(`ガットショットのストレートドロー(4アウツ)`);
+  return{outs,desc:parts.join(" + ")};
+}
+function boardThreats(board){
+  if(board.length<3)return[];
+  const t=[];const sc=[0,0,0,0];board.forEach(c=>sc[c.s]++);
+  const mx=Math.max(...sc),ms=sc.indexOf(mx);
+  if(mx>=4)t.push(`ボードに${SUITS[ms]}が4枚 — 相手は${SUITS[ms]}1枚でフラッシュ完成`);
+  else if(mx===3)t.push(`ボードに${SUITS[ms]}が3枚 — 相手のフラッシュ完成があり得る`);
+  const rs=new Set(board.map(c=>c.r));
+  let st=0;
+  for(let hi=3;hi<=12;hi++){
+    const win=hi===3?[12,0,1,2,3]:[hi-4,hi-3,hi-2,hi-1,hi];
+    st=Math.max(st,win.filter(r=>rs.has(r)).length);
+  }
+  if(st>=4)t.push("ボードのランクが4枚連番圏内 — 相手のストレート完成が濃厚な形");
+  else if(st>=3)t.push("ボードに連続したランク — 相手のストレート完成があり得る");
+  return t;
+}
 function computeAdvice(p){
   const opp=activeCount()-1;
   const eq=equity(p.hole,G.board,opp,400);
@@ -585,6 +631,20 @@ function computeAdvice(p){
   const handDesc=G.board.length>=3?CATNAME[eval7(p.hole.concat(G.board))[0]]:null;
   reasons.push(`推定勝率は約 ${eqPct}%(モンテカルロ法、対戦相手 ${opp} 人)。${opp+1} 人での平均勝率 ${(fair*100).toFixed(0)}% が損益分岐の目安です。`);
   if(handDesc)reasons.push(`現時点の役: ${handDesc}。`);
+
+  // --- draw & board-texture awareness ---
+  let draws=null;
+  if(G.stage===1||G.stage===2){
+    draws=detectDraws(p.hole,G.board);
+    if(draws){
+      const pct=G.stage===1?Math.min(95,draws.outs*4):Math.min(90,draws.outs*2);
+      reasons.push(`🎯 ドロー: ${draws.desc}。${G.stage===1?"リバーまで":"次の1枚"}での完成率は約 ${pct}%(2-4ルール)。上の勝率にはこの完成見込みが織り込まれており、完成すれば相手から大きく取れる可能性(インプライドオッズ)もあります。`);
+    }
+  }
+  if(G.stage>0){
+    const th=boardThreats(G.board);
+    if(th.length)reasons.push(`⚠️ ボード警戒: ${th.join("。")}。相手のベットやレイズが強くなった場合、これらの完成形を想定に入れてください。`);
+  }
 
   // --- opponent line reads ---
   let raisersNow=0;
@@ -669,11 +729,13 @@ function computeAdvice(p){
     reasons.push(`コールに ${toCall} 必要で、ポットは ${G.pot}${bonus?`(ボーナス期待込みで実質約 ${effPot})`:""}。ポットオッズは ${poPct}%。実効勝率がこれを上回ればコールは数学的にプラスです。`);
     if(effEq>potOdds+0.22&&effEq>fair){rec="raise";reasons.push(`実効勝率がポットオッズを大きく上回っています(${(effEq*100).toFixed(1)}% ≫ ${poPct}%)。バリューを取るためレイズが最善です。目安はポットの6〜7割(約 ${Math.round(G.pot*0.65)})の上乗せです。`);}
     else if(effEq>potOdds){rec="call";reasons.push(`実効勝率(${(effEq*100).toFixed(1)}%)がポットオッズ(${poPct}%)を上回るため、コールで期待値プラスです。`);}
-    else{rec="fold";reasons.push(`実効勝率(${(effEq*100).toFixed(1)}%)がポットオッズ(${poPct}%)を下回り、コールは長期的に損失になります。フォールドが最善です。`);}
+    else if(draws&&draws.outs>=8&&effEq>potOdds-0.08){rec="call";reasons.push(`単純なオッズでは僅かに足りません(${(effEq*100).toFixed(1)}% < ${poPct}%)が、${draws.outs}アウツの強いドローがあります。完成した時に相手のスタックから追加で取れる見込み(インプライドオッズ)まで含めればコールが正当化されます。ただしレイズが返ってきたら降ります。`);}
+    else{rec="fold";reasons.push(`実効勝率(${(effEq*100).toFixed(1)}%)がポットオッズ(${poPct}%)を下回り、コールは長期的に損失になります。${draws?`ドロー(${draws.outs}アウツ)を考慮しても価格が高すぎます。`:""}フォールドが最善です。`);}
   }else{
     if(effEq>fair+0.15){rec="raise";reasons.push(`平均を大きく上回る勝率です。チェックで無料カードを与えるより、ベットしてポットを育てつつ相手のドローに料金を課すべきです。サイズはポットの5〜7割(約 ${Math.max(G.bb*2,Math.round(G.pot*0.6))})が目安です。`);}
-    else if(effEq>fair+0.04){rec="check";reasons.push(`やや有利ですが決定的ではないため、チェックでポットをコントロールするのが無難です。相手が消極的ならブラフ気味の小さなベットも選択肢です。`);}
-    else{rec="check";reasons.push(`勝率は平均以下です。無料で次のカードを見られるチェックが最善で、ベットしてもより強いハンドしかコールしません。`);}
+    else if(draws&&draws.outs>=9&&G.stage===1){rec="raise";reasons.push(`役はまだ弱いですが${draws.outs}アウツの強いドローがあります。フロップではセミブラフのベットが標準です: 相手が降りれば即ポット獲得、コールされても高確率で完成が狙える「2つの勝ち筋」を持てます。サイズはポットの5〜6割(約 ${Math.max(G.bb*2,Math.round(G.pot*0.55))})が目安です。`);}
+    else if(effEq>fair+0.04){rec="check";reasons.push(`やや有利ですが決定的ではないため、チェックでポットをコントロールするのが無難です。${draws?`ドローもあるためセミブラフの小さなベットも選択肢です。`:"相手が消極的ならブラフ気味の小さなベットも選択肢です。"}`);}
+    else{rec="check";reasons.push(`勝率は平均以下です。無料で次のカードを見られるチェックが最善で、ベットしてもより強いハンドしかコールしません。${draws&&draws.outs>=4?`ドロー(${draws.outs}アウツ)は無料で追えるなら追う価値があります。`:""}`);}
   }
   if(rec==="raise"){ // downgrade if raising is impossible for this stack
     const[,mx]=raiseLimits(p);
