@@ -83,6 +83,26 @@
   .bar .needle{position:absolute;top:-3px;width:2px;height:12px;background:var(--gold)}
   .bar-cap{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:5px}
   .spin{color:var(--muted);font-family:var(--mono);font-size:12px}
+
+  .voice{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 14px 12px}
+  .voice-row{display:flex;gap:10px;align-items:center}
+  button.mic{flex:1;background:var(--surface2);border:1px solid var(--line);border-radius:9px;color:var(--text);
+    font-family:var(--body);font-weight:600;font-size:14px;padding:12px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;gap:8px}
+  button.mic .dot{width:9px;height:9px;border-radius:50%;background:var(--muted)}
+  button.mic.on{border-color:var(--red);color:var(--red)}
+  button.mic.on .dot{background:var(--red);animation:pulse 1.2s infinite}
+  @keyframes pulse{50%{opacity:.3}}
+  @media (prefers-reduced-motion: reduce){button.mic.on .dot{animation:none}}
+  .heard{font-family:var(--mono);font-size:12px;color:var(--muted);min-height:18px;margin-top:9px;word-break:break-all}
+  .heard b{color:var(--gold);font-weight:600}
+  .import{margin-top:10px}
+  .import summary{font-size:12.5px;color:var(--muted);cursor:pointer}
+  .import textarea{width:100%;margin-top:8px;background:var(--ground);border:1px solid var(--line);border-radius:7px;
+    color:var(--text);font-family:var(--mono);font-size:13px;padding:9px;min-height:64px;resize:vertical}
+  .import .row{display:flex;justify-content:flex-end;margin-top:6px}
+  .import button{background:none;border:1px solid var(--line);border-radius:7px;color:var(--text);
+    font-size:12.5px;padding:7px 14px;cursor:pointer}
   button:focus-visible,input:focus-visible,.slot:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
   footer{margin-top:26px;font-size:11.5px;color:var(--muted)}
 </style>
@@ -119,6 +139,19 @@
       <div class="field"><label>ポット(ベット込)</label><input id="pot" type="number" inputmode="decimal" min="0" value="100"></div>
       <div class="field"><label>コール額</label><input id="call" type="number" inputmode="decimal" min="0" value="0"></div>
     </div>
+  </section>
+
+  <section class="voice">
+    <div class="label">音声入力</div>
+    <div class="voice-row">
+      <button class="mic" id="mic"><span class="dot"></span><span id="micLabel">押しながら話す</span></button>
+    </div>
+    <div class="heard" id="heard">例:「ハンド スペードのエース ハートのキング ポット200 コール50 相手2人」</div>
+    <details class="import">
+      <summary>トランスクリプトを貼り付けて取り込む(Mori / Plaud等)</summary>
+      <textarea id="paste" placeholder="録音アプリの文字起こしをここに貼り付け"></textarea>
+      <div class="row"><button id="importBtn">取り込む</button></div>
+    </details>
   </section>
 
   <div class="actions">
@@ -303,4 +336,138 @@ function show(eq,nBoard,nOpp,pot,call){
   $("result").scrollIntoView({behavior:"smooth",block:"nearest"});
 }
 const p=x=>(x*100).toFixed(1)+"%";
+
+// ---- voice / transcript parsing ----
+// rank & suit vocabulary: katakana, romaji letters, digits, common STT variants
+const RANK_WORDS=[
+  ["エース",14],["エイス",14],["A",14],["a",14],
+  ["キング",13],["K",13],["k",13],
+  ["クイーン",12],["クィーン",12],["Q",12],["q",12],
+  ["ジャック",11],["J",11],["j",11],
+  ["テン",10],["10",10],["T",10],["10",10],
+  ["ナイン",9],["9",9],["エイト",8],["8",8],["セブン",7],["7",7],
+  ["シックス",6],["6",6],["ファイブ",5],["5",5],["フォー",4],["4",4],
+  ["スリー",3],["3",3],["ツー",2],["デュース",2],["2",2],
+];
+const SUIT_WORDS=[
+  ["スペード",0],["スペイド",0],["ハート",1],["ハード",1],
+  ["ダイヤ",2],["ダイア",2],["クラブ",3],["クローバー",3],
+];
+function parseUtterance(text){
+  const applied={cards:0,fields:[]};
+  const t=text.normalize("NFKC");
+  // slot-target keywords move the fill pointer
+  const jump=(i)=>{active=i;};
+  // scan tokens in order; pair suit+rank in either order ("スペードのエース" / "エース スペード")
+  const vocab=[];
+  for(const [w,v] of RANK_WORDS)vocab.push({w,type:"r",v});
+  for(const [w,v] of SUIT_WORDS)vocab.push({w,type:"s",v});
+  vocab.push({w:"ハンド",type:"j",v:0},{w:"手札",type:"j",v:0},
+    {w:"フロップ",type:"j",v:2},{w:"ボード",type:"j",v:2},
+    {w:"ターン",type:"j",v:5},{w:"リバー",type:"j",v:6});
+  // longest-match-first tokenization
+  vocab.sort((a,b)=>b.w.length-a.w.length);
+  const toks=[];
+  for(let i=0;i<t.length;){
+    let hit=null;
+    for(const e of vocab){
+      if(t.startsWith(e.w,i)){
+        // bare letters/digits must not sit inside a larger ASCII word/number
+        if(/^[A-Za-z0-9]+$/.test(e.w)){
+          const before=t[i-1]||"",after=t[i+e.w.length]||"";
+          if(/[A-Za-z0-9]/.test(before)||/[A-Za-z0-9]/.test(after))continue;
+        }
+        hit=e;break;
+      }
+    }
+    if(hit){toks.push(hit);i+=hit.w.length;}else i++;
+  }
+  let pr=null,ps=null; // pending rank / suit
+  for(const tok of toks){
+    if(tok.type==="j"){
+      let i=tok.v;
+      if(i===0&&sel[0]!==null&&sel[1]===null)i=1;
+      jump(i);pr=null;ps=null;continue;
+    }
+    if(tok.type==="r")pr=tok.v;else ps=tok.v;
+    if(pr!==null&&ps!==null){
+      const id=(pr-2)*4+ps;
+      if(!sel.includes(id)){pick(id);applied.cards++;}
+      pr=null;ps=null;
+    }
+  }
+  // numeric fields
+  const pot=t.match(/ポッ[トド]\D{0,3}([0-9]+(?:\.[0-9]+)?)/);
+  if(pot){$("pot").value=pot[1];applied.fields.push("ポット"+pot[1]);}
+  const call=t.match(/コール\D{0,3}([0-9]+(?:\.[0-9]+)?)/);
+  if(call){$("call").value=call[1];applied.fields.push("コール"+call[1]);}
+  const opp=t.match(/相手\D{0,3}([0-9]+)\s*人|([0-9]+)\s*人\s*相手/);
+  if(opp){const n=opp[1]||opp[2];$("opps").value=n;applied.fields.push("相手"+n+"人");}
+  if(/クリア|リセット/.test(t)){sel.fill(null);active=0;render();$("result").classList.remove("show");applied.fields.push("クリア");}
+  render();
+  if(/判定|どうする|アクション/.test(t))$("go").click();
+  return applied;
+}
+
+const heard=$("heard");
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+// Push-to-talk with a singleton recognizer: iOS Safari's continuous mode is
+// broken (duplicated results, stuck mic — WebKit Documentation #120), so we
+// hold-to-talk one short utterance at a time.
+let rec=null,listening=false,pressed=false;
+function getRec(){
+  if(rec)return rec;
+  rec=new SR();rec.lang="ja-JP";rec.continuous=false;rec.interimResults=true;
+  rec.onresult=e=>{
+    let interim="";
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const r=e.results[i];
+      if(r.isFinal){
+        const txt=r[0].transcript;
+        const a=parseUtterance(txt);
+        heard.innerHTML=esc(txt)+(a.cards||a.fields.length?" → <b>"+[a.cards?a.cards+"枚":"",...a.fields].filter(Boolean).join(" / ")+"</b>":" →(認識語なし)");
+      }else interim+=r[0].transcript;
+    }
+    if(interim)heard.textContent=interim;
+  };
+  rec.onerror=e=>{
+    if(e.error==="no-speech")return;
+    heard.textContent="音声認識エラー: "+e.error+(e.error==="not-allowed"?"(マイク許可が必要です。iOSは設定でSiriまたは音声入力を有効に)":"");
+  };
+  rec.onend=()=>{
+    listening=false;
+    $("mic").classList.remove("on");$("micLabel").textContent="押しながら話す";
+  };
+  return rec;
+}
+function micDown(ev){
+  ev.preventDefault();
+  if(!SR){heard.textContent="このブラウザは音声認識非対応です。下の貼り付け取り込みを使ってください。";return;}
+  if(listening)return;
+  pressed=true;
+  try{getRec().start();}catch(_){return;} // start() throws if already running
+  listening=true;
+  $("mic").classList.add("on");$("micLabel").textContent="聞き取り中…離すと確定";
+}
+function micUp(){
+  if(!pressed)return;
+  pressed=false;
+  if(listening){try{rec.stop();}catch(_){}}
+}
+const micBtn=$("mic");
+micBtn.style.touchAction="none";micBtn.style.userSelect="none";
+micBtn.addEventListener("pointerdown",micDown);
+micBtn.addEventListener("pointerup",micUp);
+micBtn.addEventListener("pointercancel",micUp);
+micBtn.addEventListener("pointerleave",micUp);
+micBtn.addEventListener("contextmenu",e=>e.preventDefault());
+micBtn.addEventListener("keydown",e=>{if(e.key===" "||e.key==="Enter"){if(!listening)micDown(e);else micUp();}});
+document.addEventListener("visibilitychange",()=>{if(document.hidden)micUp();});
+$("importBtn").addEventListener("click",()=>{
+  const txt=$("paste").value.trim();
+  if(!txt)return;
+  const a=parseUtterance(txt);
+  heard.innerHTML="取り込み → <b>"+(a.cards?a.cards+"枚":"カード0枚")+[""].concat(a.fields).join(" / ")+"</b>";
+});
+const esc=s=>s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 </script>
