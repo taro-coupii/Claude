@@ -371,17 +371,23 @@ async function runOutBoard(){
 
 /* ---- actions ---- */
 function applyAction(p,act,amt){
-  G.handActs.push({p,stage:G.stage,act,facing:G.currentBet>p.bet});
-  p.nActs=(p.nActs||0)+1;if(act==="raise")p.nRaises=(p.nRaises||0)+1;
+  const facing=G.currentBet>p.bet;
   if(act==="fold"){p.folded=true;p.lastAct="フォールド";}
   else if(act==="check"){p.lastAct="チェック";}
   else if(act==="call"){const d=G.currentBet-p.bet;postBet(p,d);p.lastAct=p.allIn?"オールイン":"コール "+G.currentBet;}
   else if(act==="raise"){ // amt = raise-to total
     const prev=G.currentBet;
     postBet(p,amt-p.bet);
-    if(p.bet>prev){G.minRaise=Math.max(G.minRaise,p.bet-prev);G.currentBet=p.bet;G.actedCount=0;}
-    p.lastAct=(prev===0?"ベット ":"レイズ ")+p.bet+(p.allIn?" (オールイン)":"");
+    if(p.bet>prev){
+      G.minRaise=Math.max(G.minRaise,p.bet-prev);G.currentBet=p.bet;G.actedCount=0;
+      p.lastAct=(prev===0?"ベット ":"レイズ ")+p.bet+(p.allIn?" (オールイン)":"");
+    }else{ // all-in for less than a raise: it's a call, not a raise
+      act=prev>0?"call":"check";
+      p.lastAct=p.allIn?"オールイン(コール)":"コール "+p.bet;
+    }
   }
+  G.handActs.push({p,stage:G.stage,act,facing});
+  p.nActs=(p.nActs||0)+1;if(act==="raise")p.nRaises=(p.nRaises||0)+1;
   logMsg(`${p.name}: ${p.lastAct||act}`);
 }
 
@@ -447,7 +453,7 @@ function takeRake(){
 /* ---- CPU AI ---- */
 async function cpuTurn(p){
   await sleep(500+Math.random()*700);
-  const toCall=G.currentBet-p.bet;
+  const toCall=Math.min(G.currentBet-p.bet,p.chips);
   const rand=Math.random();
   if(G.stage===0){
     // preflop: Chen-tier ranges, loosened for loose personalities
@@ -455,18 +461,19 @@ async function cpuTurn(p){
     const openRaised=G.currentBet>G.bb;
     const priceBB=toCall/G.bb;
     const[mn,mx]=raiseLimits(p);
-    const openTo=Math.min(mx,Math.max(mn,Math.round(G.bb*(2.5+rand*1.5))));
-    const threebet=Math.min(p.bet+p.chips,Math.max(G.currentBet+G.minRaise,Math.round(G.currentBet*(2.5+rand))));
+    const rSize=Math.random(),rPlay=Math.random(); // independent draws: sizing / play choice
+    const openTo=Math.min(mx,Math.max(mn,Math.round(G.bb*(2.5+rSize*1.5))));
+    const threebet=Math.min(p.bet+p.chips,Math.max(G.currentBet+G.minRaise,Math.round(G.currentBet*(2.5+rSize))));
     if(eff>=9.5){
       if(!openRaised)applyAction(p,"raise",openTo);
-      else if(rand<.55*p.aggr&&p.chips>toCall)applyAction(p,"raise",threebet);
+      else if(rPlay<.55*p.aggr&&p.chips>toCall)applyAction(p,"raise",threebet);
       else applyAction(p,"call");
     }else if(eff>=7.5){
       if(!openRaised)applyAction(p,"raise",openTo);
       else if(priceBB<=8)applyAction(p,"call");
       else applyAction(p,"fold");
     }else if(eff>=5.5){
-      if(toCall<=0)applyAction(p,rand<.35*p.aggr?"raise":"check",openTo);
+      if(toCall<=0)applyAction(p,rPlay<.35*p.aggr?"raise":"check",openTo);
       else if(!openRaised)applyAction(p,"call");
       else if(priceBB<=4)applyAction(p,"call");
       else applyAction(p,"fold");
@@ -558,7 +565,7 @@ function chenScore(h){
   const gap=hi-lo-1;
   s-=gap===0?0:gap===1?1:gap===2?2:gap===3?4:5;
   if(gap<=1&&hi<10)s+=1; // both below Q with 0-1 gap: straight potential
-  return Math.ceil(s*2)/2;
+  return Math.ceil(s); // Chen rounds half-points up
 }
 function holeName(h){
   const hi=Math.max(h[0].r,h[1].r),lo=Math.min(h[0].r,h[1].r);
@@ -634,16 +641,16 @@ function computeAdvice(p){
     reasons.push(`プリフロップ評価: ${hn}(Chenスコア ${cs} — ${tier}ハンド)。プリフロップは「多人数のランダム手札に対する勝率」ではなく、実際に参加してくるレンジを想定したハンドの絶対的な強さで判断します。上の勝率表示は参考値です。`);
     if(cs>=10){
       rec="raise";
-      reasons.push(`AA・KK・QQ・AK・AQs 級のプレミアムハンドです。リレイズを含め常に攻めるべきで、コール止まりは相手に安いドローを許すだけ損です。`);
+      reasons.push(`AA〜TT・AK・AQ・AJs・KQs 級の最上位ティアです。基本は常にレイズで攻めます(AA/KK/AK はリレイズも積極的に。TT・KQs 級で強烈なリレイズ合戦になったら、そこは慎重に)。コール止まりは相手に安いドローを許すだけ損です。`);
     }else if(cs>=8){
-      if(!openRaised){rec="raise";reasons.push(`AQ・AJs・KQs・TT 級の強いハンドです。まだレイズが入っていないので、オープンレイズで主導権を握るのが標準です。リンプやコール止まりは弱すぎます。`);}
+      if(!openRaised){rec="raise";reasons.push(`AQo・ATs・KQo・99 級の強いハンドです。まだレイズが入っていないので、オープンレイズで主導権を握るのが標準です。リンプやコール止まりは弱すぎます。`);}
       else if(priceBB<=8){rec="call";reasons.push(`強いハンドなので、この程度のレイズ(${toCall} = 約${priceBB.toFixed(1)}BB)には少なくともコールで続行すべきです。相手が慎重なタイプでなければリレイズも選択肢です。`);}
       else{rec=effEq>potOdds?"call":"fold";reasons.push(`巨大なレイズ(約${priceBB.toFixed(0)}BB)に対しては相手のレンジがAA/KK級に絞られるため、AQ級でも慎重に。ここは実効勝率とオッズの比較で判断します。`);}
     }else if(cs>=6){
       if(!openRaised){
-        if(toCall>0){rec="call";reasons.push(`有望なハンドです。レイズ前なら安く参加する価値があります。`);}
-        else if(late){rec="raise";reasons.push(`有望なハンドかつレイトポジション。誰も攻めていないならレイズしてブラインドを奪いに行くのが標準です。`);}
-        else{rec="check";reasons.push(`有望ですが決定打に欠けるため、アーリー/ミドルではチェックで様子見が無難です。`);}
+        if(late){rec="raise";reasons.push(`有望なハンドかつレイトポジション。誰もレイズしていないなら、自らレイズしてブラインドを奪いに行くのが標準です。リンプは相手に無料で反撃の機会を与えます。`);}
+        else if(toCall>0){rec="call";reasons.push(`有望なハンドです。アーリー/ミドルからのオープンレイズはやや広すぎるので、安く参加して様子を見るのが無難です(タイトに絞るならフォールドも可)。`);}
+        else{rec="check";reasons.push(`有望ですが決定打に欠けるため、無料で見られるならチェックで十分です。`);}
       }
       else if(priceBB<=5){rec="call";reasons.push(`スーテッドコネクタや中ペア級は、安いレイズ(≦5BB)ならフロップを見る価値があります(セットやドローでの大勝ち狙い)。`);}
       else{rec="fold";reasons.push(`このクラスのハンドで大きなレイズを追うのは長期的にマイナスです。`);}
@@ -667,6 +674,13 @@ function computeAdvice(p){
     if(effEq>fair+0.15){rec="raise";reasons.push(`平均を大きく上回る勝率です。チェックで無料カードを与えるより、ベットしてポットを育てつつ相手のドローに料金を課すべきです。サイズはポットの5〜7割(約 ${Math.max(G.bb*2,Math.round(G.pot*0.6))})が目安です。`);}
     else if(effEq>fair+0.04){rec="check";reasons.push(`やや有利ですが決定的ではないため、チェックでポットをコントロールするのが無難です。相手が消極的ならブラフ気味の小さなベットも選択肢です。`);}
     else{rec="check";reasons.push(`勝率は平均以下です。無料で次のカードを見られるチェックが最善で、ベットしてもより強いハンドしかコールしません。`);}
+  }
+  if(rec==="raise"){ // downgrade if raising is impossible for this stack
+    const[,mx]=raiseLimits(p);
+    if(!(mx>G.currentBet&&p.chips>toCall)){
+      rec=toCall>0?"call":"check";
+      reasons.push(`本来はレイズしたい局面ですが、スタック的にレイズが成立しないため、実行可能な最善は${toCall>0?"コール(オールイン)":"チェック"}です。`);
+    }
   }
   reasons.push(`ポジション: ${pos}。${pos==="レイトポジション"?"後から行動できるため、やや広いレンジで攻められます。":pos==="アーリーポジション"?"先に行動する不利があるため、通常より慎重に。":"標準的な判断で問題ありません。"}`);
   return {rec,eq,effEq,potOdds,toCall,pot:G.pot,reasons};
