@@ -1,5 +1,5 @@
 <title>緑卓ホールデム</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Bebas+Neue&display=swap">
 <style>
 :root{
   --felt:#0e2b1d; --felt-hi:#154029; --rim:#07160f; --panel:#0b1f15; --panel2:#10281b;
@@ -7,6 +7,7 @@
   --red:#bf4048; --teal:#4fa39a; --teal-dim:#2c5f59;
   --text:#e8e2d2; --muted:#9aa894; --line:#23402f;
   --good:#7bc47f; --warn:#e0b45c; --bad:#e07a72;
+  --neon:#ff4d8f; --neon-dim:#8f2c55; --glow-gold:0 0 18px rgba(211,171,99,.55); --glow-neon:0 0 16px rgba(255,77,143,.5);
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--rim);color:var(--text);font-family:"Zen Kaku Gothic New",system-ui,sans-serif;font-size:14px;min-height:100vh}
@@ -20,7 +21,7 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 /* ---- layout ---- */
 #app{display:flex;flex-direction:column;min-height:100vh}
 header{display:flex;align-items:center;gap:16px;padding:10px 20px;border-bottom:1px solid var(--line);background:var(--panel)}
-header h1{font-size:20px;color:var(--gold);letter-spacing:.08em}
+header h1{font-size:20px;letter-spacing:.08em;background:linear-gradient(100deg,#f0d9a8,var(--gold) 40%,var(--neon));-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 22px rgba(255,77,143,.25)}
 header .sub{color:var(--muted);font-size:12px}
 header .spacer{flex:1}
 header button{background:var(--panel2);color:var(--text);border:1px solid var(--line);padding:6px 14px;font-size:13px}
@@ -32,16 +33,21 @@ header button{background:var(--panel2);color:var(--text);border:1px solid var(--
 /* ---- table ---- */
 #table{position:relative;flex:1;min-height:480px;border-radius:50%/38%;
   background:radial-gradient(ellipse at 50% 40%,var(--felt-hi),var(--felt) 70%);
-  border:14px solid #23150c;box-shadow:inset 0 0 60px rgba(0,0,0,.55),0 8px 30px rgba(0,0,0,.5);margin:24px 30px}
+  border:14px solid #23150c;margin:24px 30px;
+  box-shadow:inset 0 0 60px rgba(0,0,0,.55),inset 0 0 0 3px rgba(211,171,99,.35),0 8px 30px rgba(0,0,0,.5),0 0 46px rgba(255,77,143,.14)}
 #board{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);display:flex;gap:8px;align-items:center;z-index:3}
 #potLine{position:absolute;left:50%;top:26%;transform:translateX(-50%);text-align:center}
 #potLine .lbl{font-size:11px;letter-spacing:.2em;color:var(--muted)}
-#potLine .amt{font-size:22px;color:var(--gold);font-family:"Shippori Mincho",serif}
+#potLine .amt{font-size:38px;line-height:1;color:var(--gold);font-family:"Bebas Neue","Shippori Mincho",serif;letter-spacing:.05em;text-shadow:var(--glow-gold);transition:transform .25s}
+#potLine .amt.bump{transform:scale(1.18)}
 #stageLbl{position:absolute;left:50%;top:63%;transform:translateX(-50%);font-size:11px;letter-spacing:.25em;color:var(--muted)}
 
 .seat{position:absolute;width:128px;transform:translate(-50%,-50%);text-align:center}
 .seat .box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 8px;transition:box-shadow .2s,border-color .2s}
-.seat.active .box{border-color:var(--gold);box-shadow:0 0 14px rgba(211,171,99,.45)}
+.seat.active .box{border-color:var(--gold);animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 10px rgba(211,171,99,.35)}50%{box-shadow:0 0 24px rgba(255,77,143,.65)}}
+.seat.win .box{border-color:var(--neon);box-shadow:var(--glow-neon),var(--glow-gold);animation:winflash .5s ease-in-out 4}
+@keyframes winflash{50%{transform:scale(1.06)}}
 .seat.folded{opacity:.42}
 .seat .nm{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .seat .chips{font-size:12px;color:var(--gold)}
@@ -51,9 +57,12 @@ header button{background:var(--panel2);color:var(--text);border:1px solid var(--
 .seat .betchip b{color:var(--red)}
 .dealerBtn{display:inline-block;background:var(--paper);color:var(--ink);border-radius:50%;width:18px;height:18px;line-height:18px;font-size:10px;font-weight:700;margin-left:4px}
 
-.card{width:34px;height:46px;border-radius:5px;background:var(--paper);color:var(--ink);
+.card{width:34px;height:46px;border-radius:5px;background:linear-gradient(160deg,#fffdf5,var(--paper) 60%,#eae2cd);color:var(--ink);
   display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:700;
-  box-shadow:0 2px 4px rgba(0,0,0,.4);font-size:14px;line-height:1}
+  box-shadow:0 2px 6px rgba(0,0,0,.5);font-size:14px;line-height:1;animation:deal .35s ease-out backwards}
+@keyframes deal{from{opacity:0;transform:translateY(-16px) rotate(-4deg)}}
+#board .card:nth-child(2){animation-delay:.06s}#board .card:nth-child(3){animation-delay:.12s}
+#board .card:nth-child(4){animation-delay:.06s}#board .card:nth-child(5){animation-delay:.06s}
 .card .st{font-size:13px}
 .card.redsuit{color:#b3323a}
 .card.back{background:repeating-linear-gradient(45deg,#5b2730,#5b2730 4px,#6e323c 4px,#6e323c 8px);border:2px solid var(--paper)}
@@ -63,10 +72,12 @@ header button{background:var(--panel2);color:var(--text);border:1px solid var(--
 /* ---- action bar ---- */
 #actions{display:flex;align-items:center;gap:10px;padding:12px 18px;background:var(--panel);border-top:1px solid var(--line);flex-wrap:wrap;min-height:64px}
 #actions .info{font-size:13px;color:var(--muted);margin-right:auto}
-.abtn{padding:10px 20px;font-size:15px;font-weight:700;color:var(--paper)}
-.abtn.fold{background:#5a2b2e}.abtn.fold:hover{background:#74383c}
-.abtn.check,.abtn.call{background:var(--teal-dim)}.abtn.check:hover,.abtn.call:hover{background:var(--teal)}
-.abtn.raise{background:var(--gold-dim)}.abtn.raise:hover{background:var(--gold);color:var(--ink)}
+.abtn{padding:11px 22px;font-size:15px;font-weight:700;color:var(--paper);transition:transform .12s,box-shadow .12s;border-radius:10px}
+.abtn:not(:disabled):hover{transform:translateY(-2px)}
+.abtn:not(:disabled):active{transform:translateY(0)}
+.abtn.fold{background:linear-gradient(160deg,#74383c,#4c2326)}.abtn.fold:hover{box-shadow:0 0 14px rgba(224,122,114,.45)}
+.abtn.check,.abtn.call{background:linear-gradient(160deg,var(--teal),var(--teal-dim))}.abtn.check:hover,.abtn.call:hover{box-shadow:0 0 14px rgba(79,163,154,.55)}
+.abtn.raise{background:linear-gradient(160deg,var(--gold),var(--gold-dim));color:var(--ink)}.abtn.raise:hover{box-shadow:var(--glow-gold)}
 .abtn.advice{background:transparent;border:1px solid var(--teal);color:var(--teal);font-weight:500}
 .abtn.advice:hover{background:var(--teal-dim);color:var(--text)}
 #raiseCtl{display:flex;align-items:center;gap:8px}
@@ -116,6 +127,7 @@ header button{background:var(--panel2);color:var(--text);border:1px solid var(--
   .seat .nm{font-size:11px}
   #table{margin:16px 8px;border-width:8px}
 }
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 
 <div id="app">
@@ -295,9 +307,12 @@ function startHand(){
   G.currentBet=G.bb;G.minRaise=G.bb;
   G.toAct=nextAlive(bbi);
   G.lastAggressor=bbi;G.actedCount=0;
+  G.players.forEach(p=>p.win=false);
+  G._seenBoard=0;G._holeAnim=0;
   clearCoach();
   logMsg(`── ハンド #${G.handNo} ──`);
   render();
+  G._holeAnim=G.handNo;
   loop();
 }
 function nextAlive(i){do{i=(i+1)%G.players.length;}while(G.players[i].out||G.players[i].folded);return i;}
@@ -576,7 +591,7 @@ $("reviewClose").onclick=()=>{$("reviewOverlay").hidden=true;startHand();};
 async function awardUncontested(){
   const w=G.players.find(p=>!p.folded&&!p.out);
   takeRake();
-  w.chips+=G.pot;
+  w.chips+=G.pot;w.win=true;
   logMsg(`${w.name} が ${G.pot} を獲得(全員フォールド)。`);
   applyHouseRules([w]);
   await endHand(`${w.name} の勝ち — 他全員フォールド`);
@@ -607,7 +622,7 @@ async function showdown(){
     const share=Math.floor(potAmt/winners.length);
     winners.forEach(w=>w.chips+=share);
     winners[0].chips+=potAmt-share*winners.length;
-    winners.forEach(w=>allWinners.add(w));
+    winners.forEach(w=>{allWinners.add(w);w.win=true;});
     results.push(`${winners.map(w=>w.name).join("・")} が ${potAmt} を獲得(${CATNAME[best[0]]})`);
   }
   results.forEach(logMsg);
@@ -640,10 +655,17 @@ function cardEl(c,big,hidden){
 function render(){
   if(!G)return;
   $("handNo").textContent=`ハンド #${G.handNo}`;
-  $("potAmt").textContent=G.pot;
+  const potEl=$("potAmt");
+  if(+potEl.textContent!==G.pot){potEl.classList.remove("bump");void potEl.offsetWidth;potEl.classList.add("bump");setTimeout(()=>potEl.classList.remove("bump"),260);}
+  potEl.textContent=G.pot;
   $("stageLbl").textContent=["PRE-FLOP","FLOP","TURN","RIVER"][G.stage]||"";
   const bd=$("board");bd.innerHTML="";
-  G.board.forEach(c=>bd.appendChild(cardEl(c,true)));
+  G.board.forEach((c,i)=>{
+    const el=cardEl(c,true);
+    if(i<(G._seenBoard||0))el.style.animation="none"; // only newly dealt cards animate
+    bd.appendChild(el);
+  });
+  G._seenBoard=G.board.length;
   // seats
   document.querySelectorAll(".seat").forEach(e=>e.remove());
   const table=$("table"),n=G.players.length;
@@ -651,7 +673,7 @@ function render(){
     const ang=Math.PI/2+ (i/n)*Math.PI*2; // human bottom center
     const x=50+44*Math.cos(ang),y=50+42*Math.sin(ang);
     const seat=document.createElement("div");
-    seat.className="seat"+(i===G.toAct&&!p.folded&&!p.out&&G.busy?" active":"")+((p.folded||p.out)?" folded":"");
+    seat.className="seat"+(i===G.toAct&&!p.folded&&!p.out&&G.busy?" active":"")+((p.folded||p.out)?" folded":"")+(p.win?" win":"");
     seat.style.left=x+"%";seat.style.top=y+"%";
     const showCards=p.hole&&(p.human||p.show);
     seat.innerHTML=`<div class="box">
@@ -662,7 +684,11 @@ function render(){
       <div class="betchip num">${p.bet?`ベット中 <b>${p.bet}</b>`:""}</div>
     </div>`;
     const cw=seat.querySelector(".cards");
-    if(p.hole&&!p.folded){p.hole.forEach(c=>cw.appendChild(cardEl(c,false,!showCards)));}
+    if(p.hole&&!p.folded){p.hole.forEach(c=>{
+      const el=cardEl(c,false,!showCards);
+      if(G._holeAnim===G.handNo)el.style.animation="none"; // animate only on the first deal of the hand
+      cw.appendChild(el);
+    });}
     table.appendChild(seat);
   });
 }
