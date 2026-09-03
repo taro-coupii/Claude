@@ -50,6 +50,7 @@ header button{background:var(--panel2);color:var(--text);border:1px solid var(--
 @keyframes winflash{50%{transform:scale(1.06)}}
 .seat.folded{opacity:.42}
 .seat .nm{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seat .archTag{font-size:9px;letter-spacing:.08em;color:var(--teal);border:1px solid var(--teal-dim);border-radius:99px;display:inline-block;padding:0 7px;margin-top:2px;white-space:nowrap}
 .seat .chips{font-size:12px;color:var(--gold)}
 .seat .act{font-size:11px;color:var(--teal);min-height:15px}
 .seat .cards{display:flex;gap:4px;justify-content:center;margin-top:4px;min-height:46px}
@@ -274,15 +275,26 @@ function equity(hole,board,nOpp,iters){
 
 /* ================= game state ================= */
 const CPU_NAMES=["ケンジ","ミホ","タツヤ","アキラ","サユリ","ゴロウ","ナナ","レイジ"];
-const POS_TIGHT=[.9,1,.85,.8,.75,.7,.85,.95]; // personality tightness variety
+const ARCHS=[
+ {name:"標準的",hint:"教科書通りのバランス型。特別な癖はありません",tight:.85,aggr:.8,noise:1,bluff:1,station:0,flow:0},
+ {name:"堅実",hint:"参加レンジが狭く、レイズはほぼ本物。逆に降ろされやすいのでブラフが効きます",tight:1.1,aggr:.55,noise:.6,bluff:.3,station:0,flow:0},
+ {name:"アグレッシブ",hint:"広く参加して頻繁にレイズ・ブラフ。レイズはやや割り引いてよいですが、ぶつかるなら強い手で",tight:.6,aggr:1.35,noise:1.2,bluff:2.2,station:0,flow:0},
+ {name:"数字至上主義",hint:"オッズに忠実で気まぐれゼロ。オッズに合わない支払いは絶対にしないので、この人のコールは常に根拠があります",tight:.95,aggr:.9,noise:.15,bluff:.4,station:0,flow:0},
+ {name:"場の流れ重視",hint:"連勝中は強気に、負け込むと弱気に。直近の勝ち負けを見れば次の出方が読めます",tight:.85,aggr:.9,noise:1.4,bluff:1.1,station:0,flow:1},
+ {name:"コーリングステーション",hint:"とにかく降りません。ブラフは通じませんが、バリューベットはたっぷり払ってくれます",tight:.7,aggr:.4,noise:.8,bluff:.4,station:1,flow:0},
+];
 let G=null;
 const $=id=>document.getElementById(id);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 
 function newGame(nCpu,stack,sb,autoAdv,review,rules){
   const players=[{name:"あなた",human:true,chips:stack,out:false}];
-  for(let i=0;i<nCpu;i++)players.push({name:CPU_NAMES[i],human:false,chips:stack,out:false,
-    tight:POS_TIGHT[i]+(Math.random()*.2-.1),aggr:.6+Math.random()*.8});
+  const deck=[...ARCHS].sort(()=>Math.random()-.5); // random archetype deal, repeats after 6
+  for(let i=0;i<nCpu;i++){
+    const arch=deck[i%deck.length];
+    players.push({name:CPU_NAMES[i],human:false,chips:stack,out:false,startStack:stack,
+      arch,tight:arch.tight+(Math.random()*.1-.05),aggr:arch.aggr});
+  }
   G={players,sb,bb:sb*2,button:Math.floor(Math.random()*players.length),handNo:0,
      autoAdv,review,records:[],busy:false,rules:rules||{},rakeTotal:0};
   players.forEach(p=>{p.streak=0;p.standing=!!G.rules.standup;});
@@ -455,9 +467,12 @@ async function cpuTurn(p){
   await sleep(500+Math.random()*700);
   const toCall=Math.min(G.currentBet-p.bet,p.chips);
   const rand=Math.random();
+  const A=p.arch;
+  // 場の流れ重視: winning streak emboldens, a beaten-down stack cows
+  const flowAdj=A.flow?Math.min(p.streak,3)*.7-(p.chips<p.startStack*.6?1:0):0;
   if(G.stage===0){
     // preflop: Chen-tier ranges, loosened for loose personalities
-    const eff=chenScore(p.hole)+(1-p.tight)*3+(rand-.5);
+    const eff=chenScore(p.hole)+(1-p.tight)*3+(rand-.5)*A.noise+flowAdj;
     const openRaised=G.currentBet>G.bb;
     const priceBB=toCall/G.bb;
     const[mn,mx]=raiseLimits(p);
@@ -487,9 +502,9 @@ async function cpuTurn(p){
   const opp=activeCount()-1;
   const eq=equity(p.hole,G.board,Math.min(opp,3),200);
   const potOdds=toCall>0?toCall/(G.pot+toCall):0;
-  const strength=eq*p.tight+(rand*.08-.04);
+  const strength=eq*p.tight+(rand*.08-.04)*A.noise+flowAdj*.04;
   if(toCall<=0){
-    if(strength>0.55||((rand<.12*p.aggr)&&G.stage>0)){
+    if(strength>0.55||rand<.12*p.aggr*A.bluff){
       const[mn,mx]=raiseLimits(p);
       const to=Math.max(mn,Math.min(mx,Math.max(G.bb*2,Math.round(G.pot*(.5+.3*rand)))));
       applyAction(p,"raise",to);
@@ -501,7 +516,8 @@ async function cpuTurn(p){
       applyAction(p,"raise",to);
     }
     else if(strength>potOdds+0.02||toCall<=G.bb&&strength>potOdds-.05)applyAction(p,"call");
-    else if(rand<.06*p.aggr&&p.chips>toCall*3)applyAction(p,"call"); // occasional float
+    else if(A.station&&strength>potOdds-0.1)applyAction(p,"call"); // calling station won't let go
+    else if(rand<.06*p.aggr*A.bluff&&p.chips>toCall*3)applyAction(p,"call"); // occasional float
     else applyAction(p,"fold");
   }
   render();
@@ -662,8 +678,8 @@ function computeAdvice(p){
     else if(acts.length)read="チェック中心の消極的なライン。弱めのレンジを示唆";
     else read="まだ行動情報なし";
     const rr=o.nActs>=8?(o.nRaises||0)/o.nActs:-1;
-    const tend=rr<0?"":rr>0.3?"(これまでのプレイは攻撃的。レイズをやや割り引いて可)":rr<0.12?"(これまでのプレイは慎重。レイズは本物の可能性大)":"";
-    reasons.push(`🔎 ${o.name} のライン: ${read}${tend}。`);
+    const tend=rr<0?"":rr>0.3?"(実際のプレイも攻撃的。レイズをやや割り引いて可)":rr<0.12?"(実際のプレイも慎重。レイズは本物の可能性大)":"";
+    reasons.push(`🔎 ${o.name}〈${o.arch.name}〉のライン: ${read}${tend}。タイプ的には: ${o.arch.hint}。`);
   }
   let effEq=eq;
   if(raisersNow>0){
@@ -916,6 +932,7 @@ function render(){
     const showCards=p.hole&&(p.human||p.show);
     seat.innerHTML=`<div class="box">
       <div class="nm">${p.standing?"🧍":""}${p.name}${i===G.button?'<span class="dealerBtn">D</span>':""}</div>
+      ${p.arch?`<div class="archTag">${p.arch.name}</div>`:""}
       <div class="chips num">${p.out?"敗退":p.chips}</div>
       <div class="act">${p.lastAct||""}</div>
       <div class="cards"></div>
