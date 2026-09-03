@@ -178,6 +178,7 @@ header button{background:var(--panel2);color:var(--text);border:1px solid var(--
   <div class="modal">
     <h2>ゲーム設定</h2>
     <div class="row"><label>CPU の人数</label><input type="range" id="cpuCount" min="1" max="8" value="3"><b class="num" id="cpuCountLbl">3 人</b></div>
+    <label class="chkrow"><input type="checkbox" id="setShowArch" checked><span>相手の性格タイプを表示<small>OFF にするとタイプを隠してプレイ(ベット傾向から自力で読み合い)。コーチの解説からもタイプ情報が消えます</small></span></label>
     <div class="row"><label>持ちチップ</label><select id="stackSel"><option value="200" selected>200(1/2 バイイン相当)</option><option value="1000">1,000</option><option value="2000">2,000</option><option value="5000">5,000</option></select></div>
     <div class="row"><label>ブラインド (SB/BB)</label><select id="blindSel"><option value="1" selected>1 / 2</option><option value="10">10 / 20</option><option value="25">25 / 50</option></select></div>
     <h3 style="color:var(--gold);font-size:14px;margin-top:18px">ハウスルール(任意)</h3>
@@ -296,7 +297,8 @@ function newGame(nCpu,stack,sb,autoAdv,review,rules){
       arch,tight:arch.tight+(Math.random()*.1-.05),aggr:arch.aggr});
   }
   G={players,sb,bb:sb*2,button:Math.floor(Math.random()*players.length),handNo:0,
-     autoAdv,review,records:[],busy:false,rules:rules||{},rakeTotal:0};
+     autoAdv,review,records:[],busy:false,rules:rules||{},rakeTotal:0,
+     showArch:$("setShowArch").checked};
   players.forEach(p=>{p.streak=0;p.standing=!!G.rules.standup;});
   G.standupActive=!!G.rules.standup;
   if(G.standupActive)logMsg("スタンドアップゲーム開始!ポットを取った人から着席です。");
@@ -679,7 +681,8 @@ function computeAdvice(p){
     else read="まだ行動情報なし";
     const rr=o.nActs>=8?(o.nRaises||0)/o.nActs:-1;
     const tend=rr<0?"":rr>0.3?"(実際のプレイも攻撃的。レイズをやや割り引いて可)":rr<0.12?"(実際のプレイも慎重。レイズは本物の可能性大)":"";
-    reasons.push(`🔎 ${o.name}〈${o.arch.name}〉のライン: ${read}${tend}。タイプ的には: ${o.arch.hint}。`);
+    if(G.showArch)reasons.push(`🔎 ${o.name}〈${o.arch.name}〉のライン: ${read}${tend}。タイプ的には: ${o.arch.hint}。`);
+    else reasons.push(`🔎 ${o.name} のライン: ${read}${tend}。`);
   }
   let effEq=eq;
   if(raisersNow>0){
@@ -932,7 +935,7 @@ function render(){
     const showCards=p.hole&&(p.human||p.show);
     seat.innerHTML=`<div class="box">
       <div class="nm">${p.standing?"🧍":""}${p.name}${i===G.button?'<span class="dealerBtn">D</span>':""}</div>
-      ${p.arch?`<div class="archTag">${p.arch.name}</div>`:""}
+      ${p.arch&&G.showArch?`<div class="archTag">${p.arch.name}</div>`:""}
       <div class="chips num">${p.out?"敗退":p.chips}</div>
       <div class="act">${p.lastAct||""}</div>
       <div class="cards"></div>
