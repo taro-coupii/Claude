@@ -1,4 +1,4 @@
-<title>緑卓ホールデム</title>
+<title>All-In One</title>
 <style>
 :root{
   --bg:#000000; --panel:#1c1c1e; --panel2:#2c2c2e; --panel3:#3a3a3c;
@@ -33,7 +33,8 @@ button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 header{display:flex;align-items:center;gap:14px;padding:11px 20px;
   background:rgba(20,20,22,.72);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);
   border-bottom:1px solid var(--line);position:sticky;top:0;z-index:12}
-header h1{font-size:17px;color:var(--text)}
+header h1{font-size:17px;color:var(--text);white-space:nowrap}
+header h1 .one{color:var(--acc)}
 header .sub{color:var(--muted);font-size:12px}
 header .spacer{flex:1}
 header button{background:var(--panel2);color:var(--text);padding:6px 14px;font-size:13px;border-radius:var(--r-pill)}
@@ -328,7 +329,7 @@ table.lk td.r{text-align:right;font-variant-numeric:tabular-nums}
 
 <div id="app">
 <header>
-  <h1>緑卓ホールデム</h1>
+  <h1>All-In <span class="one">One</span></h1>
   <nav id="tabs">
     <button class="tab on" data-view="table">卓</button>
     <button class="tab" data-view="replay">リプレイ</button>
