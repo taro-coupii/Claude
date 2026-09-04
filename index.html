@@ -957,15 +957,52 @@ function computeAdvice(p){
   const potOdds=toCall>0?toCall/(effPot+toCall):0;
   const poPct=(potOdds*100).toFixed(1);
 
+  // --- non-probabilistic context: stack depth, fold equity, who is driving ---
+  let dominated=false;
+  const live=G.players.filter(q=>q!==p&&!q.folded&&!q.out);
+  const effStack=Math.min(p.chips+p.bet,live.length?Math.max(...live.map(q=>q.chips+q.bet)):p.chips+p.bet);
+  const spr=G.pot>0?effStack/G.pot:99;
+  const stackBB=effStack/G.bb;
+  // the player who put in the current bet on this street
+  const aggr=[...G.handActs].reverse().find(a=>a.stage===G.stage&&a.act==="raise"&&a.p!==p);
+  const foe=aggr?aggr.p:null;
+  const FOLDT={"堅実":.55,"標準的":.40,"数字至上主義":.42,"場の流れ重視":.38,"アグレッシブ":.28,"コーリングステーション":.06};
+  const foldEq=live.length?live.reduce((a,q)=>a*(q.arch?FOLDT[q.arch.name]:.38),1):0;
+  const station=live.filter(q=>q.arch&&q.arch.station);
+  const knowFoe=foe&&foe.arch;
+  const foeRR=foe&&foe.nActs>=8?(foe.nRaises||0)/foe.nActs:-1;
+  // observed tendency stands in for the badge when types are hidden
+  const foeTight=knowFoe&&G.showArch?["堅実","数字至上主義"].includes(foe.arch.name):foeRR>=0&&foeRR<0.12;
+  const foeLoose=knowFoe&&G.showArch?["アグレッシブ","コーリングステーション"].includes(foe.arch.name):foeRR>0.3;
+
   if(G.stage===0){
     // --- preflop: hand-strength tiers (Chen formula), not multiway random equity ---
     const cs=chenScore(p.hole),hn=holeName(p.hole);
     const late=pos==="レイトポジション";
     const openRaised=G.currentBet>G.bb;
     const priceBB=toCall/G.bb;
-    const tier=cs>=10?"プレミアム":cs>=8?"強い":cs>=6?"有望":cs>=5?"投機的":"弱い";
-    reasons.push(`プリフロップ評価: ${hn}(Chenスコア ${cs} — ${tier}ハンド)。プリフロップは「多人数のランダム手札に対する勝率」ではなく、実際に参加してくるレンジを想定したハンドの絶対的な強さで判断します。上の勝率表示は参考値です。`);
-    if(cs>=10){
+    const isPair=p.hole[0].r===p.hole[1].r;
+    const suited=p.hole[0].s===p.hole[1].s;
+    const tier=isPair?"ポケットペア":cs>=10?"プレミアム":cs>=8?"強い":cs>=6?"有望":cs>=5?"投機的":"弱い";
+    reasons.push(`プリフロップ評価: ${hn}(Chenスコア ${cs} — ${tier})。プリフロップは「多人数のランダム手札に対する勝率」ではなく、実際に参加してくるレンジを想定したハンドの絶対的な強さで判断します。上の勝率表示は参考値です。`);
+    // 22-77: value comes from flopping a set, so the price is judged against the stack, not the hand
+    if(isPair&&cs<8){
+      const setPrice=Math.round(effStack*0.06);
+      reasons.push(`小〜中のポケットペアは「すでにワンペアがある」強さで戦うハンドではありません。フロップでセットになる確率は約 11.8%(約 7.5 回に 1 回)で、その 1 回で相手のスタックを大きく取ることが利益の源泉です。したがって判断基準はハンドの強さではなく、セットが入った時に取り返せるか(インプライドオッズ)です。目安は「相手の実効スタック ${effStack} の約 5〜6%(=${setPrice})までなら払ってよい」。`);
+      if(stackBB<20&&openRaised){
+        rec=effEq>potOdds?"call":"fold";
+        reasons.push(`ただし実効スタックが約 ${stackBB.toFixed(0)}BB しかなく、セットが入っても取り返す相手のチップが残っていません。この深さではインプライドオッズが働かないので、セット狙いは捨てて「今持っているペアの素の勝率」だけで判断します(短いスタックはショーダウン勝負)。`);
+      }else if(!openRaised){
+        rec="raise";
+        reasons.push(`まだレイズが入っていないので、オープンレイズが標準です。ペアはそれ自体がショーダウンで勝てる手なので、リンプで安く見せるより主導権を握って相手を絞った方が、セットが入らなかった時にも勝ち筋(継続ベットで降ろす)が残ります。`);
+      }else if(toCall<=setPrice){
+        rec="call";
+        reasons.push(`レイズ額 ${toCall} は目安の ${setPrice} 以内なので、セット狙いのコールが正当化されます。フロップでセットにならなければ素直に降りる、という前提での参加です。`);
+      }else{
+        rec="fold";
+        reasons.push(`レイズ額 ${toCall}(実効スタックの ${(toCall/effStack*100).toFixed(0)}%)は、セットが入った時に取り返せる額を超えています。スタックが浅いほどセット狙いは成立しにくく、ここはフォールドが最善です。`);
+      }
+    }else if(cs>=10){
       rec="raise";
       reasons.push(`AA〜TT・AK・AQ・AJs・KQs 級の最上位ティアです。基本は常にレイズで攻めます(AA/KK/AK はリレイズも積極的に。TT・KQs 級で強烈なリレイズ合戦になったら、そこは慎重に)。コール止まりは相手に安いドローを許すだけ損です。`);
     }else if(cs>=8){
@@ -1003,6 +1040,47 @@ function computeAdvice(p){
     else if(effEq>fair+0.04){rec="check";reasons.push(`やや有利ですが決定的ではないため、チェックでポットをコントロールするのが無難です。${draws?`ドローもあるためセミブラフの小さなベットも選択肢です。`:"相手が消極的ならブラフ気味の小さなベットも選択肢です。"}`);}
     else{rec="check";reasons.push(`勝率は平均以下です。無料で次のカードを見られるチェックが最善で、ベットしてもより強いハンドしかコールしません。${draws&&draws.outs>=4?`ドロー(${draws.outs}アウツ)は無料で追えるなら追う価値があります。`:""}`);}
   }
+  // --- dimensions beyond raw odds: stack depth, fold equity, domination, playability ---
+  if(G.stage===0){
+    if(stackBB<25)reasons.push(`📐 スタックデプス: 実効スタックは約 ${stackBB.toFixed(0)}BB と浅めです。浅いほどフロップ以降で駆け引きする余地がなく、セット狙いやスーテッドコネクタのような「後で大きく取る」ハンドの価値が下がり、AやKを含む素直に強いハンドの価値が上がります。`);
+    else if(stackBB>=80)reasons.push(`📐 スタックデプス: 実効スタックは約 ${stackBB.toFixed(0)}BB と深めです。深いほど後のストリートで大きく取れるため、ポケットペアやスーテッドハンドの伸びしろ(インプライドオッズ)が効いてきます。`);
+  }else{
+    if(spr<1.5)reasons.push(`📐 SPR ${spr.toFixed(1)}(ポットに対しスタックが浅い): この状況ではもう小細工の余地がなく、「勝負するかしないか」の二択です。トップペア級でもコミットして構いません。`);
+    else if(spr>6)reasons.push(`📐 SPR ${spr.toFixed(1)}(ポットに対しスタックが深い): 大きな失敗をしやすい局面です。ワンペア程度で大きなポットを作りに行くと、より強い完成形に払わされる危険(リバースインプライドオッズ)があります。ポットを膨らませすぎない判断が有効です。`);
+  }
+  if(live.length&&toCall<=0){
+    const fePct=(foldEq*100).toFixed(0);
+    if(foldEq<.15)reasons.push(`🛡 フォールドエクイティ: 全員が降りる見込みは約 ${fePct}% と低く、ベットしても「降ろして勝つ」筋はほぼ期待できません。ブラフの価値が下がり、勝負するなら純粋にバリュー(強い手で払わせる)に寄せるべき局面です。`);
+    else if(foldEq>.35)reasons.push(`🛡 フォールドエクイティ: 全員が降りる見込みは約 ${fePct}% あります。ベットには「降ろして即勝ち」という2本目の勝ち筋があり、役が弱くても仕掛ける価値が上がります。`);
+  }
+  if(G.stage===0&&G.currentBet>G.bb){
+    const hi=Math.max(p.hole[0].r,p.hole[1].r),lo=Math.min(p.hole[0].r,p.hole[1].r),sui=p.hole[0].s===p.hole[1].s;
+    const domA=hi===12&&lo<=6&&!sui, domFace=hi>=9&&hi<=11&&lo>=8&&lo<=11&&!sui;
+    dominated=domA||domFace;
+    if(dominated)reasons.push(`⚠️ リバースインプライドオッズ: ${holeName(p.hole)} はレイズしてくるレンジに対して「ドミネイトされやすい」形です。ペアになっても相手が同じランクの上位キッカーを持っていると、当たった時ほど大きく払わされます。見た目の勝率より実戦価値は低く見積もるべきです。`);
+  }
+  if(G.stage===0&&pos==="レイトポジション"&&rec!=="fold")reasons.push(`🎯 プレイアビリティ: 全ストリートで最後に行動できるため、相手のアクションを見てから決められます。同じハンドでもアーリーポジションより明確に価値が高く、その分だけ広く戦えます。`);
+
+  // --- exploit layer: adjust for who is actually in the pot ---
+  const bluffy=effEq<fair;
+  // one adjustment at most, so the reasoning never contradicts itself
+  if(dominated&&rec==="call"&&pos!=="レイトポジション"){
+    rec="fold";
+    reasons.push(`🔁 上のドミネイト懸念を判断に反映します: 先に行動する不利まで抱えてこの形を追うと、当たっても負ける展開が多くなります。同じ ${holeName(p.hole)} でもレイトポジションなら参加できますが、ここはフォールドが最善です。`);
+  }else if(rec==="raise"&&bluffy&&toCall<=0&&station.length){
+    rec="check";
+    reasons.push(`🔁 相手に合わせた修正: ${station.map(q=>q.name).join("・")} は降りないタイプです。役が平均以下のこの手でベットしても降ろせず、コールされて負けるだけになります。ベットはやめてチェックし、当たった時にバリューで払わせる方針に切り替えます(このタイプにはブラフを打たず、強い手で厚くベットするのが最大の搾取)。`);
+  }else if(rec==="check"&&!bluffy&&effEq>fair+.02&&station.length&&toCall<=0){
+    rec="raise";
+    reasons.push(`🔁 相手に合わせた修正: ${station.map(q=>q.name).join("・")} は弱い手でもコールしてきます。通常なら様子見の場面ですが、このタイプ相手には薄いバリューベットが通るため、ベットして薄い利益を積み重ねるのが得です。`);
+  }else if(rec==="call"&&foeTight&&effEq<potOdds+.08&&toCall>0){
+    rec="fold";
+    reasons.push(`🔁 相手に合わせた修正: ${foe.name} は仕掛けてくる頻度が低いタイプで、このベットは本物の可能性が高いです。オッズ上はぎりぎりコールできても、相手のレンジが強い方に偏っている分を引くとマイナスになります。ここは降りるのが正解です。`);
+  }else if(rec==="fold"&&foeLoose&&!dominated&&toCall>0&&effEq>potOdds-.07){
+    rec="call";
+    reasons.push(`🔁 相手に合わせた修正: ${foe.name} は広いレンジで仕掛けてくるタイプです。ランダムな相手を想定した計算ではわずかに足りませんが、相手のレンジに弱い手やブラフが多く混ざる分を戻すとコールが利益になります。`);
+  }
+
   if(rec==="raise"){ // downgrade if raising is impossible for this stack
     const[,mx]=raiseLimits(p);
     if(!(mx>G.currentBet&&p.chips>toCall)){
